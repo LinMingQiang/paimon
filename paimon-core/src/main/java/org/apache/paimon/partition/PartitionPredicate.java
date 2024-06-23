@@ -21,6 +21,7 @@ package org.apache.paimon.partition;
 import org.apache.paimon.data.BinaryRow;
 import org.apache.paimon.data.InternalArray;
 import org.apache.paimon.data.InternalRow;
+import org.apache.paimon.data.Timestamp;
 import org.apache.paimon.data.serializer.InternalSerializers;
 import org.apache.paimon.data.serializer.Serializer;
 import org.apache.paimon.format.SimpleColStats;
@@ -46,6 +47,8 @@ import static org.apache.paimon.utils.Preconditions.checkNotNull;
 public interface PartitionPredicate {
 
     boolean test(BinaryRow part);
+
+    boolean test(BinaryRow part, Timestamp creationTime);
 
     boolean test(
             long rowCount, InternalRow minValues, InternalRow maxValues, InternalArray nullCounts);
@@ -81,6 +84,11 @@ public interface PartitionPredicate {
         @Override
         public boolean test(BinaryRow part) {
             return predicate.test(part);
+        }
+
+        @Override
+        public boolean test(BinaryRow part, Timestamp creationTime) {
+            return test(part);
         }
 
         @Override
@@ -143,6 +151,11 @@ public interface PartitionPredicate {
 
         @Override
         public boolean test(BinaryRow part) {
+            return partitions.contains(part);
+        }
+
+        @Override
+        public boolean test(BinaryRow part, Timestamp creationTime) {
             return partitions.contains(part);
         }
 

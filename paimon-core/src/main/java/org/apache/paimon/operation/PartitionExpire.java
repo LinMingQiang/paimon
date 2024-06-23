@@ -22,6 +22,7 @@ import org.apache.paimon.annotation.VisibleForTesting;
 import org.apache.paimon.data.BinaryRow;
 import org.apache.paimon.data.InternalArray;
 import org.apache.paimon.data.InternalRow;
+import org.apache.paimon.data.Timestamp;
 import org.apache.paimon.partition.PartitionPredicate;
 import org.apache.paimon.partition.PartitionTimeExtractor;
 import org.apache.paimon.types.RowType;
@@ -115,7 +116,7 @@ public class PartitionExpire {
     }
 
     private List<BinaryRow> readPartitions(LocalDateTime expireDateTime) {
-        return scan.withPartitionFilter(new PartitionTimePredicate(expireDateTime))
+        return scan.withPartitionFilter(new PartitionLastCreationTimePredicate(expireDateTime))
                 .listPartitions();
     }
 
@@ -132,6 +133,40 @@ public class PartitionExpire {
             Object[] array = toObjectArrayConverter.convert(partition);
             LocalDateTime partTime = timeExtractor.extract(partitionKeys, Arrays.asList(array));
             return partTime != null && expireDateTime.isAfter(partTime);
+        }
+
+        @Override
+        public boolean test(BinaryRow partition, Timestamp creationTime) {
+            return test(partition);
+        }
+
+        @Override
+        public boolean test(
+                long rowCount,
+                InternalRow minValues,
+                InternalRow maxValues,
+                InternalArray nullCounts) {
+            return true;
+        }
+    }
+
+    /** PartitionLastCreationTimePredicate. */
+    private class PartitionLastCreationTimePredicate implements PartitionPredicate {
+
+        private final LocalDateTime expireDateTime;
+
+        private PartitionLastCreationTimePredicate(LocalDateTime expireDateTime) {
+            this.expireDateTime = expireDateTime;
+        }
+
+        @Override
+        public boolean test(BinaryRow part) {
+            return false;
+        }
+
+        @Override
+        public boolean test(BinaryRow partition, Timestamp creationTime) {
+            return expireDateTime.isAfter(creationTime.toLocalDateTime());
         }
 
         @Override

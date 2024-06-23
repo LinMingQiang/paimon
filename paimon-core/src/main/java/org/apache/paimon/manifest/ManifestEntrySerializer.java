@@ -21,6 +21,7 @@ package org.apache.paimon.manifest;
 import org.apache.paimon.data.BinaryRow;
 import org.apache.paimon.data.GenericRow;
 import org.apache.paimon.data.InternalRow;
+import org.apache.paimon.data.Timestamp;
 import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.io.DataFileMetaSerializer;
 import org.apache.paimon.utils.VersionedObjectSerializer;
@@ -83,6 +84,10 @@ public class ManifestEntrySerializer extends VersionedObjectSerializer<ManifestE
 
     public static Function<InternalRow, Integer> bucketGetter() {
         return row -> row.getInt(3);
+    }
+
+    public static Function<InternalRow, Timestamp> fileCreationTimeGetter() {
+        return row -> row.getRow(5, DataFileMeta.SCHEMA.getFieldCount()).getTimestamp(12, 3);
     }
 
     public static Function<InternalRow, Integer> totalBucketGetter() {

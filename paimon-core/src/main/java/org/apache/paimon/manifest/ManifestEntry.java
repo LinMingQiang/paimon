@@ -20,6 +20,7 @@ package org.apache.paimon.manifest;
 
 import org.apache.paimon.data.BinaryRow;
 import org.apache.paimon.data.InternalRow;
+import org.apache.paimon.data.Timestamp;
 import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.partition.PartitionPredicate;
 import org.apache.paimon.types.DataField;
@@ -179,8 +180,12 @@ public class ManifestEntry implements FileEntry {
         Function<InternalRow, Integer> totalBucketGetter =
                 ManifestEntrySerializer.totalBucketGetter();
         Function<InternalRow, String> fileNameGetter = ManifestEntrySerializer.fileNameGetter();
+        Function<InternalRow, Timestamp> fileCreationTimeGetter =
+                ManifestEntrySerializer.fileCreationTimeGetter();
         return row -> {
-            if ((partitionFilter != null && !partitionFilter.test(partitionGetter.apply(row)))) {
+            if ((partitionFilter != null
+                    && !partitionFilter.test(
+                            partitionGetter.apply(row), fileCreationTimeGetter.apply(row)))) {
                 return false;
             }
 
