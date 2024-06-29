@@ -19,6 +19,7 @@
 package org.apache.paimon.flink.action.cdc.watermark;
 
 import org.apache.paimon.flink.action.cdc.CdcSourceRecord;
+import org.apache.paimon.flink.action.cdc.mysql.format.DebeziumEvent;
 import org.apache.paimon.utils.JsonSerdeUtil;
 
 import org.apache.paimon.shade.jackson2.com.fasterxml.jackson.core.JsonProcessingException;
@@ -112,9 +113,12 @@ public class CdcTimestampExtractorFactory implements Serializable {
     public static class MysqlCdcTimestampExtractor implements CdcTimestampExtractor {
 
         @Override
-        public long extractTimestamp(CdcSourceRecord record) throws JsonProcessingException {
-            return JsonSerdeUtil.extractValue(
-                    (JsonNode) record.getValue(), Long.class, "payload", "ts_ms");
+        public long extractTimestamp(CdcSourceRecord record) {
+            DebeziumEvent.Payload payload = ((DebeziumEvent) record.getValue()).payload();
+            if (payload != null && payload.tsMs() != null) {
+                return payload.tsMs();
+            }
+            return Long.MIN_VALUE;
         }
     }
 

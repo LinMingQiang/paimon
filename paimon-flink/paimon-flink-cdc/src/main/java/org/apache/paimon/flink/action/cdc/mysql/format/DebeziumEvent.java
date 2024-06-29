@@ -47,6 +47,7 @@ public class DebeziumEvent {
     private static final String FIELD_AFTER = "after";
     private static final String FIELD_HISTORY_RECORD = "historyRecord";
     private static final String FIELD_OP = "op";
+    private static final String FIELD_TS_MS= "ts_ms";
     private static final String FIELD_FIELDS = "fields";
     private static final String FIELD_NAME = "name";
     private static final String FIELD_TYPE = "type";
@@ -95,18 +96,23 @@ public class DebeziumEvent {
         @JsonProperty(FIELD_OP)
         private final String op;
 
+        @JsonProperty(FIELD_TS_MS)
+        private final Long ts_ms;
+
         @JsonCreator
         public Payload(
                 @JsonProperty(FIELD_SOURCE) JsonNode source,
                 @JsonProperty(FIELD_BEFORE) JsonNode before,
                 @JsonProperty(FIELD_AFTER) JsonNode after,
                 @JsonProperty(FIELD_HISTORY_RECORD) String historyRecord,
-                @JsonProperty(FIELD_OP) String op) {
+                @JsonProperty(FIELD_OP) String op,
+                @JsonProperty(FIELD_TS_MS) Long ts_ms) {
             this.source = source;
             this.before = before;
             this.after = after;
             this.historyRecord = historyRecord;
             this.op = op;
+            this.ts_ms = ts_ms;
         }
 
         @JsonGetter(FIELD_SOURCE)
@@ -132,6 +138,11 @@ public class DebeziumEvent {
         @JsonGetter(FIELD_OP)
         public String op() {
             return op;
+        }
+
+        @JsonGetter(FIELD_TS_MS)
+        public Long tsMs() {
+            return ts_ms;
         }
 
         public boolean isSchemaChange() {

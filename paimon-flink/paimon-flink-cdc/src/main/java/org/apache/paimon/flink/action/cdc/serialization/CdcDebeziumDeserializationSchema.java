@@ -75,6 +75,7 @@ public class CdcDebeziumDeserializationSchema
         }
         byte[] bytes =
                 jsonConverter.fromConnectData(record.topic(), record.valueSchema(), record.value());
+        // 如果是 mongodb 或者 postgres 这里value是一个 jsonNode，mysql的话这里就是 DebeziumEvent.
         out.collect(new CdcSourceRecord(record.topic(), null, new String(bytes)));
     }
 

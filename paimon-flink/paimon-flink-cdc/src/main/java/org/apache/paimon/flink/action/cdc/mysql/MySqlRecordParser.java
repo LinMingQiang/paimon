@@ -70,7 +70,6 @@ public class MySqlRecordParser implements FlatMapFunction<CdcSourceRecord, RichC
 
     private static final Logger LOG = LoggerFactory.getLogger(MySqlRecordParser.class);
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
     private final ZoneId serverTimeZone;
     private final List<ComputedColumn> computedColumns;
     private final TypeMapping typeMapping;
@@ -92,9 +91,6 @@ public class MySqlRecordParser implements FlatMapFunction<CdcSourceRecord, RichC
         this.computedColumns = computedColumns;
         this.typeMapping = typeMapping;
         this.metadataConverters = metadataConverters;
-        objectMapper
-                .configure(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS, true)
-                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         String stringifyServerTimeZone = mySqlConfig.get(MySqlSourceOptions.SERVER_TIME_ZONE);
         this.serverTimeZone =
                 stringifyServerTimeZone == null
@@ -105,7 +101,7 @@ public class MySqlRecordParser implements FlatMapFunction<CdcSourceRecord, RichC
     @Override
     public void flatMap(CdcSourceRecord rawEvent, Collector<RichCdcMultiplexRecord> out)
             throws Exception {
-        root = objectMapper.readValue((String) rawEvent.getValue(), DebeziumEvent.class);
+        root = (DebeziumEvent) rawEvent.getValue();
         currentTable = root.payload().source().get(AbstractSourceInfo.TABLE_NAME_KEY).asText();
         databaseName = root.payload().source().get(AbstractSourceInfo.DATABASE_NAME_KEY).asText();
 
