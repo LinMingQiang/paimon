@@ -680,6 +680,12 @@ public class CoreOptions implements Serializable {
                             "Whether only overwrite dynamic partition when overwriting a partitioned table with "
                                     + "dynamic partition columns. Works only when the table has partition keys.");
 
+    public static final ConfigOption<PartitionExpireStrategy> PARTITION_EXPIRATION_STRATEGY =
+            key("partition.expiration-strategy")
+                    .enumType(PartitionExpireStrategy.class)
+                    .defaultValue(PartitionExpireStrategy.PARTITION_VALUE)
+                    .withDescription("");
+
     public static final ConfigOption<Duration> PARTITION_EXPIRATION_TIME =
             key("partition.expiration-time")
                     .durationType()
@@ -1758,6 +1764,10 @@ public class CoreOptions implements Serializable {
         return options.get(PARTITION_EXPIRATION_CHECK_INTERVAL);
     }
 
+    public PartitionExpireStrategy partitionExpireStrategy() {
+        return options.get(PARTITION_EXPIRATION_STRATEGY);
+    }
+
     public String partitionTimestampFormatter() {
         return options.get(PARTITION_TIMESTAMP_FORMATTER);
     }
@@ -2483,5 +2493,13 @@ public class CoreOptions implements Serializable {
         public InlineElement getDescription() {
             return text(description);
         }
+    }
+
+    /** The strategy for Partition expire. */
+    public enum PartitionExpireStrategy {
+        // use partition value as predicate-time.
+        PARTITION_VALUE,
+        // use partition last update time as predicate-time.
+        PARTITION_UPDATE_TIME
     }
 }

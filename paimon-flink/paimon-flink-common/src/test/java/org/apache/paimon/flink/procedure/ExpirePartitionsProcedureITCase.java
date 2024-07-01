@@ -51,6 +51,28 @@ public class ExpirePartitionsProcedureITCase extends CatalogITCaseBase {
         assertThat(read(table)).containsExactlyInAnyOrder("2:9024-06-01");
     }
 
+    @Test
+    public void testPartitionExpireStrategy() throws Exception {
+        sql(
+                "CREATE TABLE T ("
+                        + " k STRING,"
+                        + " dt STRING,"
+                        + " PRIMARY KEY (k, dt) NOT ENFORCED"
+                        + ") PARTITIONED BY (dt) WITH ("
+                        + " 'bucket' = '1'"
+                        + ")");
+        FileStoreTable table = paimonTable("T");
+        sql("INSERT INTO T VALUES ('1', '2024-06-01')");
+        sql("INSERT INTO T VALUES ('2', '9024-06-01')");
+        Thread.sleep(2000);
+        assertThat(read(table)).containsExactlyInAnyOrder("1:2024-06-01", "2:9024-06-01");
+        sql(
+                "CALL sys.expire_partitions(`table` => 'default.T',"
+                        + " expiration_time => '1 s',"
+                        + " expire_strategy => 'PARTITION_UPDATE_TIME')");
+        assertThat(read(table)).isEmpty();
+    }
+
     private List<String> read(FileStoreTable table) throws IOException {
         List<String> ret = new ArrayList<>();
         table.newRead()
