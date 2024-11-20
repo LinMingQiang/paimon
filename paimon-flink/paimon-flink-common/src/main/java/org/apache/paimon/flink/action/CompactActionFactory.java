@@ -39,6 +39,8 @@ public class CompactActionFactory implements ActionFactory {
 
     private static final String PARTITION_IDLE_TIME = "partition_idle_time";
 
+    private static final String FULL_COMPACTION = "full_compaction";
+
     @Override
     public String identifier() {
         return IDENTIFIER;
@@ -76,6 +78,9 @@ public class CompactActionFactory implements ActionFactory {
                 action.withPartitionIdleTime(
                         TimeUtils.parseDuration(params.get(PARTITION_IDLE_TIME)));
             }
+            if (params.has(FULL_COMPACTION)) {
+                action.withFullCompaction(Boolean.parseBoolean(params.get(FULL_COMPACTION)));
+            }
         }
 
         if (params.has(PARTITION)) {
@@ -101,7 +106,8 @@ public class CompactActionFactory implements ActionFactory {
                         + "[--order_strategy <order_strategy>]"
                         + "[--table_conf <key>=<value>]"
                         + "[--order_by <order_columns>]"
-                        + "[--partition_idle_time <partition_idle_time>]");
+                        + "[--partition_idle_time <partition_idle_time>]"
+                        + "[--full_compaction <full_compaction>]");
         System.out.println(
                 "  compact --warehouse s3://path/to/warehouse --database <database_name> "
                         + "--table <table_name> [--catalog_conf <paimon_catalog_conf> [--catalog_conf <paimon_catalog_conf> ...]]");

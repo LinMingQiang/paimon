@@ -59,6 +59,8 @@ public class CompactAction extends TableActionBase {
 
     @Nullable private Duration partitionIdleTime = null;
 
+    private Boolean fullCompaction;
+
     public CompactAction(String warehouse, String database, String tableName) {
         this(warehouse, database, tableName, Collections.emptyMap(), Collections.emptyMap());
     }
@@ -100,6 +102,11 @@ public class CompactAction extends TableActionBase {
         return this;
     }
 
+    public CompactAction withFullCompaction(Boolean fullCompaction) {
+        this.fullCompaction = fullCompaction;
+        return this;
+    }
+
     @Override
     public void build() throws Exception {
         ReadableConfig conf = env.getConfiguration();
@@ -124,6 +131,9 @@ public class CompactAction extends TableActionBase {
     private void buildForTraditionalCompaction(
             StreamExecutionEnvironment env, FileStoreTable table, boolean isStreaming)
             throws Exception {
+        Preconditions.checkArgument(
+                fullCompaction == null || !fullCompaction || !isStreaming,
+                "Full compaction is only supported on batch mode.");
         if (isStreaming) {
             // for completely asynchronous compaction
             HashMap<String, String> dynamicOptions =
@@ -138,7 +148,9 @@ public class CompactAction extends TableActionBase {
         }
         CompactorSourceBuilder sourceBuilder =
                 new CompactorSourceBuilder(identifier.getFullName(), table);
-        CompactorSinkBuilder sinkBuilder = new CompactorSinkBuilder(table, !isStreaming);
+        CompactorSinkBuilder sinkBuilder =
+                new CompactorSinkBuilder(
+                        table, fullCompaction == null ? !isStreaming : fullCompaction);
 
         sourceBuilder.withPartitionPredicate(getPredicate());
         DataStreamSource<RowData> source =
