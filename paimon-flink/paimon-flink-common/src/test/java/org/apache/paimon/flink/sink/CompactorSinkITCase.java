@@ -132,7 +132,7 @@ public class CompactorSinkITCase extends AbstractTestBase {
                         .withContinuousMode(false)
                         .withPartitionPredicate(predicate)
                         .build();
-        new CompactorSinkBuilder(table).withInput(source).build();
+        new CompactorSinkBuilder(table, true).withInput(source).build();
         env.execute();
 
         snapshot = snapshotManager.snapshot(snapshotManager.latestSnapshotId());
@@ -181,7 +181,8 @@ public class CompactorSinkITCase extends AbstractTestBase {
                                                 FlinkConnectorOptions.SINK_PARALLELISM.key(),
                                                 String.valueOf(sinkParalellism));
                                     }
-                                }))
+                                }),
+                        false)
                 .withInput(source)
                 .build();
 
@@ -267,6 +268,7 @@ public class CompactorSinkITCase extends AbstractTestBase {
                                 false,
                                 memoryPool,
                                 metricGroup),
+                true,
                 "test");
     }
 
