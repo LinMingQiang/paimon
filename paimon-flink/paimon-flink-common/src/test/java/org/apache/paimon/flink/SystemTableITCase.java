@@ -69,6 +69,9 @@ public class SystemTableITCase extends CatalogTableITCase {
         sql(
                 "CREATE TABLE T (a INT, b INT, primary key (a) NOT ENFORCED) with ('changelog-producer' = 'lookup', "
                         + "'bucket' = '2')");
+        sql("INSERT INTO T VALUES (1, 2)");
         sql("SELECT * FROM T$summary").forEach(System.out::println);
+//        sql("SELECT `partition` FROM T$files where bucket = 0").forEach(System.out::println);
+
     }
 }
