@@ -63,4 +63,12 @@ public class SystemTableITCase extends CatalogTableITCase {
                         Row.of("+I", new Integer[] {1}, new Integer[] {3}),
                         Row.of("+I", new Integer[] {2}, new Integer[] {2}));
     }
+
+    @Test
+    public void testSummaryTable() {
+        sql(
+                "CREATE TABLE T (a INT, b INT, primary key (a) NOT ENFORCED) with ('changelog-producer' = 'lookup', "
+                        + "'bucket' = '2')");
+        sql("SELECT * FROM T$summary").forEach(System.out::println);
+    }
 }
