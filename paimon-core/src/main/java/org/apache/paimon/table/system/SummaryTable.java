@@ -341,11 +341,11 @@ public class SummaryTable implements ReadonlyTable {
         private void setDataFilesSummary(GenericRow result) {
             // If the latest snapshot type is COMPACT, this will be exact, otherwise it is slightly
             // larger than the actual value, because these data are not merged.
-            long estimate_record_count = 0L;
+            long estimateRecordCount = 0L;
             long fileNums = 0L;
             long fileSizeInBytes = 0L;
             for (DataSplit dataSplit : storeTable.newSnapshotReader().read().dataSplits()) {
-                estimate_record_count += dataSplit.rowCount();
+                estimateRecordCount += dataSplit.rowCount();
                 fileNums += dataSplit.dataFiles().size();
                 for (DataFileMeta dataFile : dataSplit.dataFiles()) {
                     fileSizeInBytes += dataFile.fileSize();
@@ -353,7 +353,7 @@ public class SummaryTable implements ReadonlyTable {
             }
             result.setField(17, fileNums);
             result.setField(18, fileSizeInBytes);
-            result.setField(19, estimate_record_count);
+            result.setField(19, estimateRecordCount);
         }
 
         private BinaryString toJson(Object obj) {
