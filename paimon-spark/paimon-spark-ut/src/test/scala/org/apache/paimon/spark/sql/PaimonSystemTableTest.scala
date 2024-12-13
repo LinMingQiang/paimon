@@ -81,4 +81,20 @@ class PaimonSystemTableTest extends PaimonSparkTestBase {
       spark.sql("select partition,bucket from `T$buckets`"),
       Row("[2024-10-10, 01]", 0) :: Row("[2024-10-10, 01]", 1) :: Row("[2024-10-10, 01]", 2) :: Nil)
   }
+
+  test("system table: summary table") {
+    spark.sql(s"""
+                 |CREATE TABLE T (a INT, b STRING,dt STRING,hh STRING)
+                 |PARTITIONED BY (dt, hh)
+                 |TBLPROPERTIES ('primary-key'='a,dt,hh', 'bucket' = '3')
+                 |""".stripMargin)
+
+    spark.sql("INSERT INTO T VALUES(1, 'a', '2024-10-10', '01')")
+    spark.sql("INSERT INTO T VALUES(2, 'b', '2024-10-10', '01')")
+    spark.sql("INSERT INTO T VALUES(3, 'c', '2024-10-10', '01')")
+    spark.sql("INSERT INTO T VALUES(4, 'd', '2024-10-10', '01')")
+    spark.sql("INSERT INTO T VALUES(5, 'f', '2024-10-10', '01')")
+
+    spark.sql("select * from `T$summary`").show(false)
+  }
 }

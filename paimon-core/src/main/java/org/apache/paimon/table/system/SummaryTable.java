@@ -220,7 +220,7 @@ public class SummaryTable implements ReadonlyTable {
                         Iterators.transform(
                                 iterator,
                                 row ->
-                                        ProjectedRow.from(readType, PartitionsTable.TABLE_TYPE)
+                                        ProjectedRow.from(readType, SummaryTable.TABLE_TYPE)
                                                 .replaceRow(row));
             }
             return new IteratorRecordReader<>(iterator);
