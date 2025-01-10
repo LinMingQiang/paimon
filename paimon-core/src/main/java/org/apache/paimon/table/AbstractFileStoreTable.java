@@ -77,6 +77,7 @@ import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -86,6 +87,7 @@ import java.util.SortedMap;
 import java.util.function.BiConsumer;
 
 import static org.apache.paimon.CoreOptions.PATH;
+import static org.apache.paimon.CoreOptions.WriteAction;
 import static org.apache.paimon.utils.Preconditions.checkArgument;
 
 /** Abstract {@link FileStoreTable}. */
@@ -432,7 +434,8 @@ abstract class AbstractFileStoreTable implements FileStoreTable {
     public TableCommitImpl newCommit(String commitUser) {
         CoreOptions options = coreOptions();
         Runnable snapshotExpire = null;
-        if (!options.writeOnly()) {
+        HashSet<WriteAction> skippingActions = options.writeSkippingActions();
+        if (!options.skippingSnapshotExpire(skippingActions)) {
             boolean changelogDecoupled = options.changelogLifecycleDecoupled();
             ExpireConfig expireConfig = options.expireConfig();
             ExpireSnapshots expireChangelog = newExpireChangelog().config(expireConfig);
@@ -449,8 +452,12 @@ abstract class AbstractFileStoreTable implements FileStoreTable {
         return new TableCommitImpl(
                 store().newCommit(commitUser, createCommitCallbacks(commitUser)),
                 snapshotExpire,
-                options.writeOnly() ? null : store().newPartitionExpire(commitUser),
-                options.writeOnly() ? null : store().newTagCreationManager(),
+                options.skippingPartitionExpire(skippingActions)
+                        ? null
+                        : store().newPartitionExpire(commitUser),
+                options.skippingAutoCreateTag(skippingActions)
+                        ? null
+                        : store().newTagCreationManager(),
                 catalogEnvironment.lockFactory().create(),
                 CoreOptions.fromMap(options()).consumerExpireTime(),
                 new ConsumerManager(fileIO, path, snapshotManager().branch()),

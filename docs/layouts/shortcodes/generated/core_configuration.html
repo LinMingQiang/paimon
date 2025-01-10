@@ -1069,6 +1069,12 @@ If the data size allocated for the sorting task is uneven,which may lead to perf
             <td>Write batch size for any file format if it supports.</td>
         </tr>
         <tr>
+            <td><h5>write.skip-actions</h5></td>
+            <td style="word-wrap: break-word;">(none)</td>
+            <td>String</td>
+            <td>This parameter only works when write-only is false., You can specify which actions to skip during the write process.<br />1. 'partition-expire': skipping partition expire.<br />2. 'snapshot-expire': skipping snapshot expire.<br />3. 'create-tag': skipping auto create tag.<br />Both can be configured at the same time: 'partition-expire,snapshot-expire,create-tag'.</td>
+        </tr>
+        <tr>
             <td><h5>zorder.var-length-contribution</h5></td>
             <td style="word-wrap: break-word;">8</td>
             <td>Integer</td>

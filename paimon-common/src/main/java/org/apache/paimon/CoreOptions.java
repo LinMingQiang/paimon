@@ -443,6 +443,25 @@ public class CoreOptions implements Serializable {
                             "If set to true, compactions and snapshot expiration will be skipped. "
                                     + "This option is used along with dedicated compact jobs.");
 
+    public static final ConfigOption<String> WRITE_SKIP_ACTIONS =
+            key("write.skip-actions")
+                    .stringType()
+                    .noDefaultValue()
+                    .withDescription(
+                            Description.builder()
+                                    .text(
+                                            "This parameter only works when write-only is false., You can specify which actions to skip during the write process.")
+                                    .linebreak()
+                                    .text("1. 'partition-expire': skipping partition expire.")
+                                    .linebreak()
+                                    .text("2. 'snapshot-expire': skipping snapshot expire.")
+                                    .linebreak()
+                                    .text("3. 'create-tag': skipping auto create tag.")
+                                    .linebreak()
+                                    .text(
+                                            "Both can be configured at the same time: 'partition-expire,snapshot-expire,create-tag'.")
+                                    .build());
+
     public static final ConfigOption<MemorySize> SOURCE_SPLIT_TARGET_SIZE =
             key("source.split.target-size")
                     .memoryType()
@@ -2241,6 +2260,27 @@ public class CoreOptions implements Serializable {
         return options.get(WRITE_ONLY);
     }
 
+    public HashSet<WriteAction> writeSkippingActions() {
+        String str = options.get(WRITE_SKIP_ACTIONS);
+        return StringUtils.isNullOrWhitespaceOnly(str)
+                ? new HashSet<>(0)
+                : Arrays.stream(str.split(","))
+                        .map(action -> WriteAction.valueOf(action.toUpperCase().replace('-', '_')))
+                        .collect(Collectors.toCollection(HashSet::new));
+    }
+
+    public boolean skippingPartitionExpire(HashSet<WriteAction> skippingActions) {
+        return writeOnly() || skippingActions.contains(WriteAction.PARTITION_EXPIRE);
+    }
+
+    public boolean skippingSnapshotExpire(HashSet<WriteAction> skippingActions) {
+        return writeOnly() || skippingActions.contains(WriteAction.SNAPSHOT_EXPIRE);
+    }
+
+    public boolean skippingAutoCreateTag(HashSet<WriteAction> skippingActions) {
+        return writeOnly() || skippingActions.contains(WriteAction.CREATE_TAG);
+    }
+
     public boolean streamingReadOverwrite() {
         return options.get(STREAMING_READ_OVERWRITE);
     }
@@ -3218,6 +3258,28 @@ public class CoreOptions implements Serializable {
         private final String value;
 
         PartitionMarkDoneAction(String value) {
+            this.value = value;
+        }
+
+        @Override
+        public String toString() {
+            return value;
+        }
+    }
+
+    /** Actions performed during table writing. */
+    public enum WriteAction {
+
+        // Actions during commit.
+        PARTITION_EXPIRE("partition-expire"),
+        SNAPSHOT_EXPIRE("snapshot-expire"),
+        CREATE_TAG("create-tag");
+
+        // TODO : Support skipping actions during write operations.
+
+        private final String value;
+
+        WriteAction(String value) {
             this.value = value;
         }
 
