@@ -95,7 +95,7 @@ public class WriteSkippingActionsITCase extends CatalogITCaseBase {
         HashMap<String, String> options =
                 createOptions(
                         action.equals("do-all")
-                                ? ""
+                                ? null
                                 : "partition-expire,snapshot-expire,create-tag");
 
         if (action.equals("write-only")) {
@@ -170,7 +170,9 @@ public class WriteSkippingActionsITCase extends CatalogITCaseBase {
         options.put(CoreOptions.FULL_COMPACTION_DELTA_COMMITS.key(), "1");
 
         // skipping actions .
-        options.put(CoreOptions.WRITE_SKIP_ACTIONS.key(), skippingActions);
+        if (skippingActions != null) {
+            options.put(CoreOptions.WRITE_SKIP_ACTIONS.key(), skippingActions);
+        }
 
         return options;
     }

@@ -452,11 +452,13 @@ public class CoreOptions implements Serializable {
                                     .text(
                                             "This parameter only works when write-only is false., You can specify which actions to skip during the write process.")
                                     .linebreak()
-                                    .text("1. 'partition-expire': skipping partition expire.")
+                                    .text(
+                                            "1. 'partition-expire': Skip the action of partition expiration.")
                                     .linebreak()
-                                    .text("2. 'snapshot-expire': skipping snapshot expire.")
+                                    .text(
+                                            "2. 'snapshot-expire': Skip the action of snapshot expiration.")
                                     .linebreak()
-                                    .text("3. 'create-tag': skipping auto create tag.")
+                                    .text("3. 'create-tag': Skip automatic tag creation.")
                                     .linebreak()
                                     .text(
                                             "Both can be configured at the same time: 'partition-expire,snapshot-expire,create-tag'.")
@@ -2260,24 +2262,29 @@ public class CoreOptions implements Serializable {
         return options.get(WRITE_ONLY);
     }
 
-    public HashSet<WriteAction> writeSkippingActions() {
-        String str = options.get(WRITE_SKIP_ACTIONS);
-        return StringUtils.isNullOrWhitespaceOnly(str)
-                ? new HashSet<>(0)
-                : Arrays.stream(str.split(","))
-                        .map(action -> WriteAction.valueOf(action.toUpperCase().replace('-', '_')))
-                        .collect(Collectors.toCollection(HashSet::new));
+    public Set<WriteAction> writeSkippingActions() {
+        return options.getOptional(WRITE_SKIP_ACTIONS)
+                .map(
+                        str ->
+                                Arrays.stream(str.split(","))
+                                        .map(
+                                                action ->
+                                                        WriteAction.valueOf(
+                                                                action.toUpperCase()
+                                                                        .replace('-', '_')))
+                                        .collect(Collectors.toCollection(HashSet::new)))
+                .orElseGet(() -> new HashSet<>(0));
     }
 
-    public boolean skippingPartitionExpire(HashSet<WriteAction> skippingActions) {
+    public boolean skippingPartitionExpire(Set<WriteAction> skippingActions) {
         return writeOnly() || skippingActions.contains(WriteAction.PARTITION_EXPIRE);
     }
 
-    public boolean skippingSnapshotExpire(HashSet<WriteAction> skippingActions) {
+    public boolean skippingSnapshotExpire(Set<WriteAction> skippingActions) {
         return writeOnly() || skippingActions.contains(WriteAction.SNAPSHOT_EXPIRE);
     }
 
-    public boolean skippingAutoCreateTag(HashSet<WriteAction> skippingActions) {
+    public boolean skippingAutoCreateTag(Set<WriteAction> skippingActions) {
         return writeOnly() || skippingActions.contains(WriteAction.CREATE_TAG);
     }
 

@@ -77,12 +77,12 @@ import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.Set;
 import java.util.SortedMap;
 import java.util.function.BiConsumer;
 
@@ -434,7 +434,7 @@ abstract class AbstractFileStoreTable implements FileStoreTable {
     public TableCommitImpl newCommit(String commitUser) {
         CoreOptions options = coreOptions();
         Runnable snapshotExpire = null;
-        HashSet<WriteAction> skippingActions = options.writeSkippingActions();
+        Set<WriteAction> skippingActions = options.writeSkippingActions();
         if (!options.skippingSnapshotExpire(skippingActions)) {
             boolean changelogDecoupled = options.changelogLifecycleDecoupled();
             ExpireConfig expireConfig = options.expireConfig();
