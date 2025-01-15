@@ -434,8 +434,8 @@ abstract class AbstractFileStoreTable implements FileStoreTable {
     public TableCommitImpl newCommit(String commitUser) {
         CoreOptions options = coreOptions();
         Runnable snapshotExpire = null;
-        Set<WriteAction> skippingActions = options.writeSkippingActions();
-        if (!options.skippingSnapshotExpire(skippingActions)) {
+        Set<WriteAction> skippingActions = options.writeActions();
+        if (options.doSnapshotExpireAction(skippingActions)) {
             boolean changelogDecoupled = options.changelogLifecycleDecoupled();
             ExpireConfig expireConfig = options.expireConfig();
             ExpireSnapshots expireChangelog = newExpireChangelog().config(expireConfig);
@@ -452,12 +452,12 @@ abstract class AbstractFileStoreTable implements FileStoreTable {
         return new TableCommitImpl(
                 store().newCommit(commitUser, createCommitCallbacks(commitUser)),
                 snapshotExpire,
-                options.skippingPartitionExpire(skippingActions)
-                        ? null
-                        : store().newPartitionExpire(commitUser),
-                options.skippingAutoCreateTag(skippingActions)
-                        ? null
-                        : store().newTagCreationManager(),
+                options.doPartitionExpireAction(skippingActions)
+                        ? store().newPartitionExpire(commitUser)
+                        : null,
+                options.doAutoCreateTagAction(skippingActions)
+                        ? store().newTagCreationManager()
+                        : null,
                 catalogEnvironment.lockFactory().create(),
                 CoreOptions.fromMap(options()).consumerExpireTime(),
                 new ConsumerManager(fileIO, path, snapshotManager().branch()),

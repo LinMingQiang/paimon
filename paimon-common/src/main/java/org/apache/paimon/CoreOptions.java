@@ -443,25 +443,29 @@ public class CoreOptions implements Serializable {
                             "If set to true, compactions and snapshot expiration will be skipped. "
                                     + "This option is used along with dedicated compact jobs.");
 
-    public static final ConfigOption<String> WRITE_SKIP_ACTIONS =
-            key("write.skip-actions")
+    public static final ConfigOption<String> WRITE_ACTIONS =
+            key("write-actions")
                     .stringType()
-                    .noDefaultValue()
+                    .defaultValue(WriteAction.ALL.value)
                     .withDescription(
                             Description.builder()
                                     .text(
-                                            "This parameter only works when write-only is false., You can specify which actions to skip during the write process.")
+                                            "This parameter only works when write-only is false, You can specify which actions to do during the write process, this parameter only effect flink writer, and for action or procedure is not effect.")
                                     .linebreak()
                                     .text(
-                                            "1. 'partition-expire': Skip the action of partition expiration.")
+                                            "1. 'all': By default, all actions will be performed.")
                                     .linebreak()
                                     .text(
-                                            "2. 'snapshot-expire': Skip the action of snapshot expiration.")
-                                    .linebreak()
-                                    .text("3. 'create-tag': Skip automatic tag creation.")
+                                            "2. 'partition-expire': The action of partition expiration.")
                                     .linebreak()
                                     .text(
-                                            "Both can be configured at the same time: 'partition-expire,snapshot-expire,create-tag'.")
+                                            "3. 'snapshot-expire': The action of snapshot expiration.")
+                                    .linebreak()
+                                    .text(
+                                            "4. 'tag-automatic-creation': The action of automatic tag creation.")
+                                    .linebreak()
+                                    .text(
+                                            "Both can be configured at the same time: 'partition-expire,snapshot-expire,tag-automatic-creation'.")
                                     .build());
 
     public static final ConfigOption<MemorySize> SOURCE_SPLIT_TARGET_SIZE =
@@ -2262,8 +2266,8 @@ public class CoreOptions implements Serializable {
         return options.get(WRITE_ONLY);
     }
 
-    public Set<WriteAction> writeSkippingActions() {
-        return options.getOptional(WRITE_SKIP_ACTIONS)
+    public Set<WriteAction> writeActions() {
+        return options.getOptional(WRITE_ACTIONS)
                 .map(
                         str ->
                                 Arrays.stream(str.split(","))
@@ -2276,16 +2280,38 @@ public class CoreOptions implements Serializable {
                 .orElseGet(() -> new HashSet<>(0));
     }
 
-    public boolean skippingPartitionExpire(Set<WriteAction> skippingActions) {
-        return writeOnly() || skippingActions.contains(WriteAction.PARTITION_EXPIRE);
+    public boolean doPartitionExpireAction(Set<WriteAction> doWriteActions) {
+        return !writeOnly()
+                && (doWriteActions.contains(WriteAction.ALL)
+                        || doWriteActions.contains(WriteAction.PARTITION_EXPIRE));
     }
 
-    public boolean skippingSnapshotExpire(Set<WriteAction> skippingActions) {
-        return writeOnly() || skippingActions.contains(WriteAction.SNAPSHOT_EXPIRE);
+    public boolean doSnapshotExpireAction(Set<WriteAction> doWriteActions) {
+        return !writeOnly()
+                && (doAllWriteActions(doWriteActions)
+                        || doWriteActions.contains(WriteAction.SNAPSHOT_EXPIRE));
     }
 
-    public boolean skippingAutoCreateTag(Set<WriteAction> skippingActions) {
-        return writeOnly() || skippingActions.contains(WriteAction.CREATE_TAG);
+    public boolean doAutoCreateTagAction(Set<WriteAction> doWriteActions) {
+        return !writeOnly()
+                && (doAllWriteActions(doWriteActions)
+                        || doWriteActions.contains(WriteAction.TAG_AUTOMATIC_CREATION));
+    }
+
+    public boolean doFullCompactionAction(Set<WriteAction> doWriteActions) {
+        return !writeOnly() && (doAllWriteActions(doWriteActions) || doWriteActions.contains(WriteAction.FULL_COMPACT));
+    }
+
+    public boolean doMinorCompactionAction(Set<WriteAction> doWriteActions) {
+        return !writeOnly() && (doAllWriteActions(doWriteActions) || doWriteActions.contains(WriteAction.MINOR_COMPACT));
+    }
+
+    public boolean doCompact(Set<WriteAction> doWriteActions) {
+        return doFullCompactionAction(doWriteActions) || doMinorCompactionAction(doWriteActions);
+    }
+
+    public boolean doAllWriteActions(Set<WriteAction> doWriteActions) {
+        return doWriteActions.contains(WriteAction.ALL);
     }
 
     public boolean streamingReadOverwrite() {
@@ -3277,12 +3303,17 @@ public class CoreOptions implements Serializable {
     /** Actions performed during table writing. */
     public enum WriteAction {
 
+        // All write actions will be performed and this is the default behavior.
+        ALL("all"),
+
         // Actions during commit.
         PARTITION_EXPIRE("partition-expire"),
         SNAPSHOT_EXPIRE("snapshot-expire"),
-        CREATE_TAG("create-tag");
+        TAG_AUTOMATIC_CREATION("tag-automatic-creation"),
 
-        // TODO : Support skipping actions during write operations.
+        // Actions during writing.
+        MINOR_COMPACT("minor-compact"),
+        FULL_COMPACT("full-compact");
 
         private final String value;
 

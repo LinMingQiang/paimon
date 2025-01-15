@@ -36,28 +36,39 @@ import java.util.HashMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** ITCase for Skipping actions during writing. */
-public class WriteSkippingActionsITCase extends CatalogITCaseBase {
+/** ITCase for write actions. */
+public class WriteActionsITCase extends CatalogITCaseBase {
 
     private static final int TIMEOUT = 180;
 
     @Timeout(value = TIMEOUT)
     @ParameterizedTest
     @EnumSource(CoreOptions.WriteAction.class)
-    public void testSkippingCommitActions(CoreOptions.WriteAction skipAction) throws Exception {
+    public void testWriteActions(CoreOptions.WriteAction writeAction) throws Exception {
 
-        HashMap<String, String> skipActionOptions = createOptions(skipAction.toString());
+        HashMap<String, String> writeActionOptions = createOptions(writeAction.toString());
 
-        createTable("T", skipActionOptions);
+        createTable("T", writeActionOptions);
         sql("INSERT INTO T VALUES ('HXH', '20250101')");
 
         FileStoreTable table = paimonTable("T");
         SnapshotManager snapshotManager = table.snapshotManager();
 
-        switch (skipAction) {
+        switch (writeAction) {
+            case ALL:
+                // Test case for no actions being skipped. (write-only is false)
+                // snapshot count is 2 (snapshot 1 has expired), last snapshot id is 3, auto create
+                // tag,
+                // partition expired.
+                expectTable(table, snapshotManager, 2, 3, 1, null);
+                // snapshot 2 is compact, snapshot 3 is overwrite because partition expired.
+                assertThat(snapshotManager.snapshot(2).commitKind())
+                        .isEqualTo(Snapshot.CommitKind.COMPACT);
+                assertThat(snapshotManager.snapshot(3).commitKind())
+                        .isEqualTo(Snapshot.CommitKind.OVERWRITE);
+                break;
             case PARTITION_EXPIRE:
-                // Since partition expiration was skipped, there will be one less overwrite type
-                // snapshot.
+                // Only do partition expiration.
                 expectTable(table, snapshotManager, 1, 2, 1, "20250101");
                 // Snapshot 2 is COMPACT.
                 assertThat(snapshotManager.snapshot(2).commitKind())
@@ -77,25 +88,30 @@ public class WriteSkippingActionsITCase extends CatalogITCaseBase {
                 assertThat(snapshotManager.snapshot(3).commitKind())
                         .isEqualTo(Snapshot.CommitKind.OVERWRITE);
                 break;
-            case CREATE_TAG:
+            case TAG_AUTOMATIC_CREATION:
                 // Test case for skipping auto create tag.
                 // No tags are generated because the automatic tag creation action is skipped.
                 expectTable(table, snapshotManager, 2, 3, 0, null);
                 // Partition expired.
                 assertThat(snapshotManager.snapshot(3).commitKind())
                         .isEqualTo(Snapshot.CommitKind.OVERWRITE);
+
+            case FULL_COMPACT:
+                break;
+            case MINOR_COMPACT:
+                break;
         }
     }
 
     @Timeout(value = TIMEOUT)
     @ParameterizedTest
-    @ValueSource(strings = {"do-all", "write-only", "skip-all"})
-    public void testSkippingAllActionsAndWriteOnly(String action) throws Exception {
+    @ValueSource(strings = {"write-only", "partition-expire,snapshot-expire"})
+    public void testWriteOnlyAndMultipleActions(String action) throws Exception {
 
         HashMap<String, String> options =
                 createOptions(
                         action.equals("do-all")
-                                ? null
+                                ? "all"
                                 : "partition-expire,snapshot-expire,create-tag");
 
         if (action.equals("write-only")) {
@@ -109,18 +125,6 @@ public class WriteSkippingActionsITCase extends CatalogITCaseBase {
         SnapshotManager snapshotManager = table.snapshotManager();
 
         switch (action) {
-            case "do-all":
-                // Test case for no actions being skipped. (write-only is false)
-                // snapshot count is 2 (snapshot 1 has expired), last snapshot id is 3, auto create
-                // tag,
-                // partition expired.
-                expectTable(table, snapshotManager, 2, 3, 1, null);
-                // snapshot 2 is compact, snapshot 3 is overwrite because partition expired.
-                assertThat(snapshotManager.snapshot(2).commitKind())
-                        .isEqualTo(Snapshot.CommitKind.COMPACT);
-                assertThat(snapshotManager.snapshot(3).commitKind())
-                        .isEqualTo(Snapshot.CommitKind.OVERWRITE);
-                break;
             case "write-only":
                 // no compact, no expire, no tag.
                 expectTable(table, snapshotManager, 1, 1, 0, "20250101");
@@ -144,7 +148,8 @@ public class WriteSkippingActionsITCase extends CatalogITCaseBase {
     @Test
     @Timeout(value = TIMEOUT)
     public void testSkipCreateTagWithBatchMode() throws Catalog.TableNotExistException {
-        HashMap<String, String> options = createOptions("create-tag");
+        // only do partition expire.
+        HashMap<String, String> options = createOptions("partition-expire");
 
         // Skipping tag creation will not take effect if the tag creation mode is batch.
         options.put(CoreOptions.TAG_AUTOMATIC_CREATION.key(), "batch");
@@ -155,7 +160,7 @@ public class WriteSkippingActionsITCase extends CatalogITCaseBase {
         assertThat(table.tagManager().tagCount()).isEqualTo(1);
     }
 
-    private HashMap<String, String> createOptions(String skippingActions) {
+    private HashMap<String, String> createOptions(String writeActions) {
         HashMap<String, String> options = new HashMap<>();
         // Partition expiration will be triggered every time.
         options.put(CoreOptions.PARTITION_EXPIRATION_TIME.key(), "1 d");
@@ -170,8 +175,8 @@ public class WriteSkippingActionsITCase extends CatalogITCaseBase {
         options.put(CoreOptions.FULL_COMPACTION_DELTA_COMMITS.key(), "1");
 
         // skipping actions .
-        if (skippingActions != null) {
-            options.put(CoreOptions.WRITE_SKIP_ACTIONS.key(), skippingActions);
+        if (writeActions != null) {
+            options.put(CoreOptions.WRITE_ACTIONS.key(), writeActions);
         }
 
         return options;
