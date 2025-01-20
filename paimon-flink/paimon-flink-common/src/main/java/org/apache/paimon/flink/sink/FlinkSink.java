@@ -46,6 +46,8 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.sink.v2.DiscardingSink;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperatorFactory;
 import org.apache.flink.table.api.config.ExecutionConfigOptions;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 
@@ -80,6 +82,7 @@ public abstract class FlinkSink<T> implements Serializable {
     private static final String WRITER_NAME = "Writer";
     private static final String WRITER_WRITE_ONLY_NAME = "Writer(write-only)";
     private static final String GLOBAL_COMMITTER_NAME = "Global Committer";
+    private static final Logger log = LoggerFactory.getLogger(FlinkSink.class);
 
     protected final FileStoreTable table;
     private final boolean ignorePreviousFiles;
@@ -109,35 +112,44 @@ public abstract class FlinkSink<T> implements Serializable {
         if (coreOptions.writeOnly()) {
             waitCompaction = false;
         } else {
+            Set<CoreOptions.WriteAction> writeActions = coreOptions.writeActions();
             waitCompaction = coreOptions.prepareCommitWaitCompaction();
             int deltaCommits = -1;
-            if (options.contains(FULL_COMPACTION_DELTA_COMMITS)) {
-                deltaCommits = options.get(FULL_COMPACTION_DELTA_COMMITS);
-            } else if (options.contains(CHANGELOG_PRODUCER_FULL_COMPACTION_TRIGGER_INTERVAL)) {
-                long fullCompactionThresholdMs =
-                        options.get(CHANGELOG_PRODUCER_FULL_COMPACTION_TRIGGER_INTERVAL).toMillis();
-                deltaCommits =
-                        (int)
-                                (fullCompactionThresholdMs
-                                        / checkpointConfig.getCheckpointInterval());
-            }
+            if (coreOptions.doFullCompactionAction(writeActions)) {
+                if (options.contains(FULL_COMPACTION_DELTA_COMMITS)) {
+                    deltaCommits = options.get(FULL_COMPACTION_DELTA_COMMITS);
+                } else if (options.contains(CHANGELOG_PRODUCER_FULL_COMPACTION_TRIGGER_INTERVAL)) {
+                    long fullCompactionThresholdMs =
+                            options.get(CHANGELOG_PRODUCER_FULL_COMPACTION_TRIGGER_INTERVAL)
+                                    .toMillis();
+                    deltaCommits =
+                            (int)
+                                    (fullCompactionThresholdMs
+                                            / checkpointConfig.getCheckpointInterval());
+                }
 
-            if (changelogProducer == ChangelogProducer.FULL_COMPACTION || deltaCommits >= 0) {
-                int finalDeltaCommits = Math.max(deltaCommits, 1);
-                return (table, commitUser, state, ioManager, memoryPool, metricGroup) -> {
-                    assertNoSinkMaterializer.run();
-                    return new GlobalFullCompactionSinkWrite(
-                            table,
-                            commitUser,
-                            state,
-                            ioManager,
-                            ignorePreviousFiles,
-                            waitCompaction,
-                            finalDeltaCommits,
-                            isStreaming,
-                            memoryPool,
-                            metricGroup);
-                };
+                if (changelogProducer == ChangelogProducer.FULL_COMPACTION || deltaCommits >= 0) {
+                    int finalDeltaCommits = Math.max(deltaCommits, 1);
+                    return (table, commitUser, state, ioManager, memoryPool, metricGroup) -> {
+                        assertNoSinkMaterializer.run();
+                        return new GlobalFullCompactionSinkWrite(
+                                table,
+                                commitUser,
+                                state,
+                                ioManager,
+                                ignorePreviousFiles,
+                                waitCompaction,
+                                finalDeltaCommits,
+                                isStreaming,
+                                memoryPool,
+                                metricGroup);
+                    };
+                }
+            } else {
+                log.warn(
+                        "According to the config {} = {}, the action of 'full-compact' will be skipped.",
+                        CoreOptions.WRITE_ACTIONS.key(),
+                        coreOptions.toConfiguration().get(CoreOptions.WRITE_ACTIONS));
             }
         }
 

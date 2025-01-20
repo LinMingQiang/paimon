@@ -198,10 +198,15 @@ public class CompactProcedure extends BaseProcedure {
                                 table.partitionKeys());
                     }
 
-                    HashMap<String, String> dynamicOptions = new HashMap<>();
-                    ProcedureUtils.putIfNotEmpty(
-                            dynamicOptions, CoreOptions.WRITE_ONLY.key(), "false");
-                    ProcedureUtils.putAllOptions(dynamicOptions, options);
+                    Map<String, String> dynamicOptions = new HashMap<>();
+                    dynamicOptions.put(CoreOptions.WRITE_ONLY.key(), "false");
+                    dynamicOptions.put(
+                            CoreOptions.WRITE_ACTIONS.key(),
+                            CoreOptions.WriteAction.ALL.toString());
+
+                    if (!StringUtils.isNullOrWhitespaceOnly(options)) {
+                        dynamicOptions.putAll(ParameterUtils.parseCommaSeparatedKeyValues(options));
+                    }
                     table = table.copy(dynamicOptions);
                     InternalRow internalRow =
                             newInternalRow(

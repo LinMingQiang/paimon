@@ -75,9 +75,9 @@ public class StoreCompactOperator extends PrepareCommitOperator<RowData, Committ
             String initialCommitUser,
             boolean fullCompaction) {
         super(parameters, Options.fromMap(table.options()));
-        Preconditions.checkArgument(
-                !table.coreOptions().writeOnly(),
-                CoreOptions.WRITE_ONLY.key() + " should not be true for StoreCompactOperator.");
+
+        checkWriteActions(table.coreOptions());
+
         this.table = table;
         this.storeSinkWriteProvider = storeSinkWriteProvider;
         this.initialCommitUser = initialCommitUser;
@@ -188,6 +188,18 @@ public class StoreCompactOperator extends PrepareCommitOperator<RowData, Committ
         return waitToCompact;
     }
 
+    public static void checkWriteActions(CoreOptions coreOptions) {
+        Preconditions.checkArgument(
+                coreOptions.doCompact(),
+                String.format(
+                        "%s should not be true or %s should be %s or contains %s/%s for StoreCompactOperator.",
+                        CoreOptions.WRITE_ONLY.key(),
+                        CoreOptions.WRITE_ACTIONS.key(),
+                        CoreOptions.WriteAction.ALL,
+                        CoreOptions.WriteAction.MINOR_COMPACT,
+                        CoreOptions.WriteAction.FULL_COMPACT));
+    }
+
     /** {@link StreamOperatorFactory} of {@link StoreCompactOperator}. */
     public static class Factory extends PrepareCommitOperator.Factory<RowData, Committable> {
         private final FileStoreTable table;
@@ -201,9 +213,8 @@ public class StoreCompactOperator extends PrepareCommitOperator<RowData, Committ
                 String initialCommitUser,
                 boolean fullCompaction) {
             super(Options.fromMap(table.options()));
-            Preconditions.checkArgument(
-                    !table.coreOptions().writeOnly(),
-                    CoreOptions.WRITE_ONLY.key() + " should not be true for StoreCompactOperator.");
+            checkWriteActions(table.coreOptions());
+
             this.table = table;
             this.storeSinkWriteProvider = storeSinkWriteProvider;
             this.initialCommitUser = initialCommitUser;

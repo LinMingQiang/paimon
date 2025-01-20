@@ -80,6 +80,7 @@ import java.util.SortedMap;
 import java.util.function.BiConsumer;
 
 import static org.apache.paimon.CoreOptions.PATH;
+import static org.apache.paimon.CoreOptions.WriteAction;
 import static org.apache.paimon.utils.Preconditions.checkArgument;
 
 /** Abstract {@link FileStoreTable}. */
@@ -465,8 +466,8 @@ abstract class AbstractFileStoreTable implements FileStoreTable {
     protected Runnable newExpireRunnable() {
         CoreOptions options = coreOptions();
         Runnable snapshotExpire = null;
-
-        if (!options.writeOnly()) {
+        Set<WriteAction> skippingActions = options.writeActions();
+        if (options.doSnapshotExpireAction(skippingActions)) {
             boolean changelogDecoupled = options.changelogLifecycleDecoupled();
             ExpireConfig expireConfig = options.expireConfig();
             ExpireSnapshots expireChangelog = newExpireChangelog().config(expireConfig);
