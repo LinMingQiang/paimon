@@ -263,7 +263,7 @@ public class KeyValueFileStoreWrite extends MemoryFileStoreWrite<KeyValue> {
             ExecutorService compactExecutor,
             Levels levels,
             @Nullable DeletionVectorsMaintainer dvMaintainer) {
-        if (!options.doCompact()) {
+        if (!CoreOptions.WriteAction.doFullCompactionAction(options.writeActions())) {
             return new NoopCompactManager();
         } else {
             Comparator<InternalRow> keyComparator = keyComparatorSupplier.get();
@@ -315,7 +315,7 @@ public class KeyValueFileStoreWrite extends MemoryFileStoreWrite<KeyValue> {
         ChangelogProducer changelogProducer = options.changelogProducer();
         LookupStrategy lookupStrategy = options.lookupStrategy();
         if (changelogProducer.equals(FULL_COMPACTION)
-                && options.doFullCompactionAction(options.writeActions())) {
+                && CoreOptions.WriteAction.doFullCompactionAction(options.writeActions())) {
             return new FullChangelogMergeTreeCompactRewriter(
                     maxLevel,
                     mergeEngine,

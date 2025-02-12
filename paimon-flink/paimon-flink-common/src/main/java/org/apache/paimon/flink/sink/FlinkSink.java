@@ -115,7 +115,7 @@ public abstract class FlinkSink<T> implements Serializable {
             Set<CoreOptions.WriteAction> writeActions = coreOptions.writeActions();
             waitCompaction = coreOptions.prepareCommitWaitCompaction();
             int deltaCommits = -1;
-            if (coreOptions.doFullCompactionAction(writeActions)) {
+            if (CoreOptions.WriteAction.doFullCompactionAction(writeActions)) {
                 if (options.contains(FULL_COMPACTION_DELTA_COMMITS)) {
                     deltaCommits = options.get(FULL_COMPACTION_DELTA_COMMITS);
                 } else if (options.contains(CHANGELOG_PRODUCER_FULL_COMPACTION_TRIGGER_INTERVAL)) {

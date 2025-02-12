@@ -18,6 +18,7 @@
 
 package org.apache.paimon.flink.sink;
 
+import org.apache.paimon.CoreOptions;
 import org.apache.paimon.flink.FlinkConnectorOptions;
 import org.apache.paimon.flink.compact.AppendPreCommitCompactCoordinatorOperator;
 import org.apache.paimon.flink.compact.AppendPreCommitCompactWorkerOperator;
@@ -92,7 +93,8 @@ public abstract class AppendTableSink<T> extends FlinkWriteSink<T> {
             written = newWritten;
         }
 
-        boolean enableCompaction = table.coreOptions().doCompact();
+        boolean enableCompaction =
+                CoreOptions.WriteAction.doFullCompactionAction(table.coreOptions().writeActions());
         boolean isStreamingMode =
                 input.getExecutionEnvironment()
                                 .getConfiguration()

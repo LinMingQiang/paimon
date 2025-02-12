@@ -467,7 +467,7 @@ abstract class AbstractFileStoreTable implements FileStoreTable {
         CoreOptions options = coreOptions();
         Runnable snapshotExpire = null;
         Set<WriteAction> skippingActions = options.writeActions();
-        if (options.doSnapshotExpireAction(skippingActions)) {
+        if (WriteAction.doSnapshotExpireAction(skippingActions)) {
             boolean changelogDecoupled = options.changelogLifecycleDecoupled();
             ExpireConfig expireConfig = options.expireConfig();
             ExpireSnapshots expireChangelog = newExpireChangelog().config(expireConfig);
