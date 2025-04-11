@@ -140,6 +140,10 @@ public class ManifestEntry implements FileEntry {
         return new ManifestEntry(kind, partition, bucket, totalBuckets, file.copyWithoutStats());
     }
 
+    public ManifestEntry copyWithNewFile(DataFileMeta newFile) {
+        return new ManifestEntry(kind, partition, bucket, totalBuckets, newFile);
+    }
+
     @Override
     public boolean equals(Object o) {
         if (!(o instanceof ManifestEntry)) {

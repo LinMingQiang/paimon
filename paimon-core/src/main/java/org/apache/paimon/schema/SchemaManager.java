@@ -713,6 +713,29 @@ public class SchemaManager implements Serializable {
         }
     }
 
+    public Optional<TableSchema> mergeSchema(
+            TableSchema current, RowType rowType, boolean allowExplicitCast) {
+
+        Preconditions.checkArgument(
+                current != null,
+                "It requires that the current schema to exist when calling 'mergeSchema'");
+
+        TableSchema update = SchemaMergingUtils.mergeSchemas(current, rowType, allowExplicitCast);
+        if (current.equals(update)) {
+            return Optional.empty();
+        } else {
+            try {
+                if (commit(update)) {
+                    return Optional.of(update);
+                } else {
+                    throw new RuntimeException("Failed to commit the schema.");
+                }
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to commit the schema.", e);
+            }
+        }
+    }
+
     private static Map<String, String> applySchemaChanges(
             Map<String, String> options, Iterable<SchemaChange> changes) {
         Map<String, String> newOptions = Maps.newHashMap(options);
