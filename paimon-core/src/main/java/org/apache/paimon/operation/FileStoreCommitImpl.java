@@ -270,7 +270,6 @@ public class FileStoreCommitImpl implements FileStoreCommit {
         }
     }
 
-    @Override
     public void commit(ManifestCommittable committable, boolean checkAppendFiles) {
         LOG.info(
                 "Ready to commit to table {}, number of commit messages: {}",

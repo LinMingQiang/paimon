@@ -67,6 +67,8 @@ public abstract class CatalogITCaseBase extends AbstractTestBase {
     protected TableEnvironment sEnv;
     protected String path;
 
+    protected Map<String, String> options = new HashMap<>(catalogOptions());
+
     @BeforeEach
     public void before() throws IOException {
         tEnv = tableEnvironmentBuilder().batchMode().build();
@@ -75,7 +77,6 @@ public abstract class CatalogITCaseBase extends AbstractTestBase {
         String inferScan =
                 !inferScanParallelism() ? ",\n'table-default.scan.infer-parallelism'='false'" : "";
 
-        Map<String, String> options = new HashMap<>(catalogOptions());
         options.put("type", "paimon");
         if (supportDefineWarehouse()) {
             options.put("warehouse", toWarehouse(path));

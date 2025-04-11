@@ -433,6 +433,28 @@ public class DataFileMeta {
                 newExternalPath);
     }
 
+    public DataFileMeta newSchemaId(long newSchemaId) {
+        return new DataFileMeta(
+                fileName,
+                fileSize,
+                rowCount,
+                minKey,
+                maxKey,
+                keyStats,
+                valueStats,
+                minSequenceNumber,
+                maxSequenceNumber,
+                newSchemaId,
+                level,
+                extraFiles,
+                creationTime,
+                deleteRowCount,
+                embeddedIndex,
+                fileSource,
+                valueStatsCols,
+                externalPath);
+    }
+
     public DataFileMeta copyWithoutStats() {
         return new DataFileMeta(
                 fileName,

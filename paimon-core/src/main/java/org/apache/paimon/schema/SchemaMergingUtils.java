@@ -29,11 +29,15 @@ import org.apache.paimon.types.MultisetType;
 import org.apache.paimon.types.ReassignFieldId;
 import org.apache.paimon.types.RowType;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+
+import static org.apache.paimon.schema.SchemaManager.checkAlterTableOption;
+import static org.apache.paimon.schema.SchemaManager.checkResetTableOption;
 
 /** The util class for merging the schemas. */
 public class SchemaMergingUtils {
@@ -62,6 +66,31 @@ public class SchemaMergingUtils {
                 currentTableSchema.primaryKeys(),
                 currentTableSchema.options(),
                 currentTableSchema.comment());
+    }
+
+    public static Map<String, String> mergeOptions(
+            Map<String, String> currentOptions, Map<String, String> targetOptions) {
+
+        currentOptions.forEach(
+                (k, v) -> {
+                    if (targetOptions.containsKey(k)) {
+                        if (!targetOptions.get(k).equals(v)) {
+                            checkAlterTableOption(k, v, targetOptions.get(k), false);
+                        }
+                    } else {
+                        checkResetTableOption(targetOptions.get(k));
+                    }
+                });
+
+        targetOptions.forEach(
+                (k, v) -> {
+                    if (!currentOptions.containsKey(k)) {
+                        checkAlterTableOption(k, v, currentOptions.get(k), false);
+                    }
+                });
+        Map<String, String> mergedOptions = new HashMap<>(currentOptions);
+        mergedOptions.putAll(targetOptions);
+        return mergedOptions;
     }
 
     public static RowType mergeSchemas(

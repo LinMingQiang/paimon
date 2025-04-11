@@ -45,6 +45,7 @@ import org.apache.paimon.utils.SegmentsCache;
 import org.apache.paimon.utils.SimpleFileReader;
 import org.apache.paimon.utils.SnapshotManager;
 import org.apache.paimon.utils.TagManager;
+import org.apache.paimon.utils.VersionControlOperator;
 
 import org.apache.paimon.shade.caffeine2.com.github.benmanes.caffeine.cache.Cache;
 
@@ -261,6 +262,11 @@ public abstract class DelegatedFileStoreTable implements FileStoreTable {
     @Override
     public void fastForward(String branchName) {
         wrapped.fastForward(branchName);
+    }
+
+    @Override
+    public VersionControlOperator versionControlOperator() {
+        return wrapped.versionControlOperator();
     }
 
     @Override

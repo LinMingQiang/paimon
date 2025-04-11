@@ -85,4 +85,8 @@ public class IndexIncrement {
                         .map(IndexFileMeta::fileName)
                         .collect(Collectors.toList()));
     }
+
+    public static IndexIncrement emptyIncrement() {
+        return new IndexIncrement(Collections.emptyList());
+    }
 }

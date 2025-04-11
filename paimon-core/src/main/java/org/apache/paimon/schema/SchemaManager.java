@@ -713,6 +713,32 @@ public class SchemaManager implements Serializable {
         }
     }
 
+    public Optional<TableSchema> mergeSchema(
+            TableSchema current,
+            TableSchema update,
+            boolean mergeOptions,
+            boolean allowExplicitCast) {
+
+        Preconditions.checkArgument(
+                current != null,
+                "It requires that the current schema to exist when calling 'mergeSchema'");
+
+        TableSchema newSchema =
+                SchemaMergingUtils.mergeSchemas(
+                        current, new RowType(false, update.fields()), allowExplicitCast);
+        if (mergeOptions) {
+            newSchema =
+                    newSchema.copy(
+                            SchemaMergingUtils.mergeOptions(current.options(), update.options()));
+        }
+
+        if (current.equals(newSchema)) {
+            return Optional.empty();
+        } else {
+            return Optional.of(newSchema);
+        }
+    }
+
     private static Map<String, String> applySchemaChanges(
             Map<String, String> options, Iterable<SchemaChange> changes) {
         Map<String, String> newOptions = Maps.newHashMap(options);

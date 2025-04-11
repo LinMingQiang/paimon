@@ -62,6 +62,7 @@ import org.apache.paimon.utils.SnapshotManager;
 import org.apache.paimon.utils.SnapshotNotExistException;
 import org.apache.paimon.utils.StringUtils;
 import org.apache.paimon.utils.TagManager;
+import org.apache.paimon.utils.VersionControlOperator;
 
 import org.apache.paimon.shade.caffeine2.com.github.benmanes.caffeine.cache.Cache;
 
@@ -681,6 +682,11 @@ abstract class AbstractFileStoreTable implements FileStoreTable {
         }
         return new FileSystemBranchManager(
                 fileIO, path, snapshotManager(), tagManager(), schemaManager());
+    }
+
+    @Override
+    public VersionControlOperator versionControlOperator() {
+        return new VersionControlOperator(this, catalogEnvironment);
     }
 
     @Override

@@ -20,6 +20,7 @@ package org.apache.paimon.spark;
 
 import org.apache.paimon.spark.procedure.AlterFunctionProcedure;
 import org.apache.paimon.spark.procedure.AlterViewDialectProcedure;
+import org.apache.paimon.spark.procedure.CherryPickSnapshotProcedure;
 import org.apache.paimon.spark.procedure.ClearConsumersProcedure;
 import org.apache.paimon.spark.procedure.CompactManifestProcedure;
 import org.apache.paimon.spark.procedure.CompactProcedure;
@@ -106,6 +107,7 @@ public class SparkProcedures {
         procedureBuilders.put("create_function", CreateFunctionProcedure::builder);
         procedureBuilders.put("alter_function", AlterFunctionProcedure::builder);
         procedureBuilders.put("drop_function", DropFunctionProcedure::builder);
+        procedureBuilders.put("cherry_pick", CherryPickSnapshotProcedure::builder);
         return procedureBuilders.build();
     }
 }

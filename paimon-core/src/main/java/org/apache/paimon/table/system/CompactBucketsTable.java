@@ -56,6 +56,7 @@ import org.apache.paimon.utils.IteratorRecordReader;
 import org.apache.paimon.utils.SimpleFileReader;
 import org.apache.paimon.utils.SnapshotManager;
 import org.apache.paimon.utils.TagManager;
+import org.apache.paimon.utils.VersionControlOperator;
 
 import javax.annotation.Nullable;
 
@@ -171,6 +172,11 @@ public class CompactBucketsTable implements DataTable, ReadonlyTable {
     @Override
     public BranchManager branchManager() {
         return wrapped.branchManager();
+    }
+
+    @Override
+    public VersionControlOperator versionControlOperator() {
+        return wrapped.versionControlOperator();
     }
 
     @Override
