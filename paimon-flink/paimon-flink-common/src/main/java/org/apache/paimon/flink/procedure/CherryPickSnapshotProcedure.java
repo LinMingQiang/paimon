@@ -27,8 +27,6 @@ import org.apache.paimon.manifest.ManifestFile;
 import org.apache.paimon.manifest.ManifestFileMeta;
 import org.apache.paimon.manifest.ManifestList;
 import org.apache.paimon.operation.FileStoreCommitImpl;
-import org.apache.paimon.schema.SchemaChange;
-import org.apache.paimon.schema.SchemaMergingUtils;
 import org.apache.paimon.schema.TableSchema;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.utils.Preconditions;
@@ -41,6 +39,7 @@ import org.apache.flink.table.procedure.ProcedureContext;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /** CherryPickSnapshotProcedure. */
@@ -57,13 +56,14 @@ public class CherryPickSnapshotProcedure extends ProcedureBase {
             argument = {
                 @ArgumentHint(name = "table", type = @DataTypeHint("STRING")),
                 @ArgumentHint(name = "branch", type = @DataTypeHint("STRING")),
-                @ArgumentHint(name = "snapshot", type = @DataTypeHint("Integer"))
+                @ArgumentHint(name = "snapshot", type = @DataTypeHint("Integer")),
+                    @ArgumentHint(name = "syncOptions", type = @DataTypeHint("BOOLEAN"), isOptional = true)
             })
     public String[] call(
-            ProcedureContext procedureContext, String tableId, String branchName, Integer snapshot)
+            ProcedureContext procedureContext, String tableId, String branchName, Integer snapshot, Boolean syncOptions)
             throws Catalog.TableNotExistException {
-        FileStoreTable mainTable =
-                (FileStoreTable) catalog.getTable(Identifier.fromString(tableId));
+        Identifier identifier = Identifier.fromString(tableId);
+        FileStoreTable mainTable = (FileStoreTable) catalog.getTable(identifier);
         FileStoreTable branchTable = mainTable.switchToBranch(branchName);
         Snapshot cherryPickSnapshot = branchTable.snapshot(snapshot);
         Preconditions.checkArgument(
@@ -71,24 +71,25 @@ public class CherryPickSnapshotProcedure extends ProcedureBase {
                         && cherryPickSnapshot.commitKind() == Snapshot.CommitKind.APPEND,
                 "Cherry-pick only support APPEND commitKind snapshot.");
 
+        Preconditions.checkArgument(
+                mainTable.schemaManager().latest().isPresent(), "Main branch has no schema found.");
+
         ManifestList manifestListReader = branchTable.store().manifestListFactory().create();
         ManifestFile manifestFileReader = branchTable.store().manifestFileFactory().create();
 
         TableSchema branchSchema =
                 branchTable.schemaManager().schema(cherryPickSnapshot.schemaId());
+
         TableSchema oldSchema = mainTable.schemaManager().latest().get();
         TableSchema updatedSchema = null;
         try {
-            // TODO ： mergeSchema 应该返回的是最新的 schema. 这里的 schema update 应该使用 catalog, 因为要更新到 hive.
-            // TODO ： 需要增加参数，是否要同步 options.
-            List<SchemaChange> changes =
-                    SchemaMergingUtils.findSchemaChanges(oldSchema, branchSchema);
 
-            // 更新了 schema 和 同步到 hive.
-            if (!changes.isEmpty()) {
-                catalog.alterTable(Identifier.fromString(tableId), changes, false);
-                updatedSchema = mainTable.schemaManager().latest().get();
-                Preconditions.checkArgument(oldSchema.id() == updatedSchema.id() - 1, "");
+            Optional<TableSchema> optional =
+                    mainTable
+                            .schemaManager()
+                            .mergeSchema(oldSchema, branchSchema, syncOptions == null || syncOptions, true);
+            if (optional.isPresent()) {
+                updatedSchema = optional.get();
             }
 
             List<ManifestEntry> appendTableFiles = new ArrayList<>();

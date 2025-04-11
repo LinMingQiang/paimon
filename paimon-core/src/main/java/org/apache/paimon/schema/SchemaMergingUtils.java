@@ -29,54 +29,18 @@ import org.apache.paimon.types.MultisetType;
 import org.apache.paimon.types.ReassignFieldId;
 import org.apache.paimon.types.RowType;
 
-import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import static org.apache.paimon.schema.SchemaManager.checkAlterTableOption;
+import static org.apache.paimon.schema.SchemaManager.checkResetTableOption;
+
 /** The util class for merging the schemas. */
 public class SchemaMergingUtils {
-
-    // TODO : 等待实现. 需要处理内嵌字段. 参考 merge. 还要判断配置 options 有么有改变.
-    public static List<SchemaChange> findSchemaChanges(
-            TableSchema baseSchema, TableSchema updateSchema) {
-        List<SchemaChange> schemas = new ArrayList<>(1);
-
-        Map<String, DataField> updateFieldMap =
-                updateSchema.fields().stream()
-                        .collect(Collectors.toMap(DataField::name, Function.identity()));
-
-        baseSchema
-                .fields()
-                .forEach(
-                        baseField -> {
-                            if (updateFieldMap.containsKey(baseField.name())) {
-                                DataField updateField = updateFieldMap.get(baseField.name());
-                                if (!updateField.type().equals(baseField.type())) {
-                                    schemas.add(
-                                            SchemaChange.updateColumnType(
-                                                    baseField.name(), baseField.type()));
-                                }
-                            }
-                        });
-
-        Map<String, DataField> baseFieldMap =
-                baseSchema.fields().stream()
-                        .collect(Collectors.toMap(DataField::name, Function.identity()));
-
-        updateSchema
-                .fields()
-                .forEach(
-                        field -> {
-                            if (!baseFieldMap.containsKey(field.name())) {
-                                schemas.add(SchemaChange.addColumn(field.name(), field.type()));
-                            }
-                        });
-
-        return schemas;
-    }
 
     public static TableSchema mergeSchemas(
             TableSchema currentTableSchema, RowType targetType, boolean allowExplicitCast) {
@@ -102,6 +66,31 @@ public class SchemaMergingUtils {
                 currentTableSchema.primaryKeys(),
                 currentTableSchema.options(),
                 currentTableSchema.comment());
+    }
+
+    public static Map<String, String> mergeOptions(
+            Map<String, String> currentOptions, Map<String, String> targetOptions) {
+
+        currentOptions.forEach(
+                (k, v) -> {
+                    if (targetOptions.containsKey(k)) {
+                        if (!targetOptions.get(k).equals(v)) {
+                            checkAlterTableOption(k, v, targetOptions.get(k), false);
+                        }
+                    } else {
+                        checkResetTableOption(targetOptions.get(k));
+                    }
+                });
+
+        targetOptions.forEach(
+                (k, v) -> {
+                    if (!currentOptions.containsKey(k)) {
+                        checkAlterTableOption(k, v, currentOptions.get(k), false);
+                    }
+                });
+        Map<String, String> mergedOptions = new HashMap<>(currentOptions);
+        mergedOptions.putAll(targetOptions);
+        return mergedOptions;
     }
 
     public static RowType mergeSchemas(

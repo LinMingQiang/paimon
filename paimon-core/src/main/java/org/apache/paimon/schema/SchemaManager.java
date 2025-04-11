@@ -714,19 +714,30 @@ public class SchemaManager implements Serializable {
     }
 
     public Optional<TableSchema> mergeSchema(
-            TableSchema current, RowType rowType, boolean allowExplicitCast) {
+            TableSchema current,
+            TableSchema update,
+            boolean mergeOptions,
+            boolean allowExplicitCast) {
 
         Preconditions.checkArgument(
                 current != null,
                 "It requires that the current schema to exist when calling 'mergeSchema'");
 
-        TableSchema update = SchemaMergingUtils.mergeSchemas(current, rowType, allowExplicitCast);
-        if (current.equals(update)) {
+        TableSchema newSchema =
+                SchemaMergingUtils.mergeSchemas(
+                        current, new RowType(false, update.fields()), allowExplicitCast);
+        if (mergeOptions) {
+            newSchema =
+                    newSchema.copy(
+                            SchemaMergingUtils.mergeOptions(current.options(), update.options()));
+        }
+
+        if (current.equals(newSchema)) {
             return Optional.empty();
         } else {
             try {
-                if (commit(update)) {
-                    return Optional.of(update);
+                if (commit(newSchema)) {
+                    return Optional.of(newSchema);
                 } else {
                     throw new RuntimeException("Failed to commit the schema.");
                 }
