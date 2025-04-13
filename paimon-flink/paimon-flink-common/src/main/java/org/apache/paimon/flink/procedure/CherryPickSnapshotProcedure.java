@@ -57,10 +57,17 @@ public class CherryPickSnapshotProcedure extends ProcedureBase {
                 @ArgumentHint(name = "table", type = @DataTypeHint("STRING")),
                 @ArgumentHint(name = "branch", type = @DataTypeHint("STRING")),
                 @ArgumentHint(name = "snapshot", type = @DataTypeHint("Integer")),
-                    @ArgumentHint(name = "syncOptions", type = @DataTypeHint("BOOLEAN"), isOptional = true)
+                @ArgumentHint(
+                        name = "syncOptions",
+                        type = @DataTypeHint("BOOLEAN"),
+                        isOptional = true)
             })
     public String[] call(
-            ProcedureContext procedureContext, String tableId, String branchName, Integer snapshot, Boolean syncOptions)
+            ProcedureContext procedureContext,
+            String tableId,
+            String branchName,
+            Integer snapshot,
+            Boolean syncOptions)
             throws Catalog.TableNotExistException {
         Identifier identifier = Identifier.fromString(tableId);
         FileStoreTable mainTable = (FileStoreTable) catalog.getTable(identifier);
@@ -71,26 +78,29 @@ public class CherryPickSnapshotProcedure extends ProcedureBase {
                         && cherryPickSnapshot.commitKind() == Snapshot.CommitKind.APPEND,
                 "Cherry-pick only support APPEND commitKind snapshot.");
 
-        Preconditions.checkArgument(
-                mainTable.schemaManager().latest().isPresent(), "Main branch has no schema found.");
-
-        ManifestList manifestListReader = branchTable.store().manifestListFactory().create();
-        ManifestFile manifestFileReader = branchTable.store().manifestFileFactory().create();
+        Optional<Snapshot> oldSnapshot = mainTable.latestSnapshot();
+        TableSchema oldSchema = mainTable.schemaManager().latest().get();
 
         TableSchema branchSchema =
                 branchTable.schemaManager().schema(cherryPickSnapshot.schemaId());
-
-        TableSchema oldSchema = mainTable.schemaManager().latest().get();
         TableSchema updatedSchema = null;
+        Snapshot updatedSnapshot;
         try {
 
             Optional<TableSchema> optional =
                     mainTable
                             .schemaManager()
-                            .mergeSchema(oldSchema, branchSchema, syncOptions == null || syncOptions, true);
+                            .mergeSchema(
+                                    oldSchema,
+                                    branchSchema,
+                                    syncOptions == null || syncOptions,
+                                    true);
             if (optional.isPresent()) {
                 updatedSchema = optional.get();
             }
+
+            ManifestList manifestListReader = branchTable.store().manifestListFactory().create();
+            ManifestFile manifestFileReader = branchTable.store().manifestFileFactory().create();
 
             List<ManifestEntry> appendTableFiles = new ArrayList<>();
             List<ManifestEntry> appendChangelog = new ArrayList<>();
@@ -101,16 +111,17 @@ public class CherryPickSnapshotProcedure extends ProcedureBase {
                             .create()
                             .read(cherryPickSnapshot.indexManifest());
 
-            readManifestEntry(
-                    cherryPickSnapshot,
-                    manifestListReader,
+            // 读取 append 文件.
+            readAndUpdateManifestEntry(
                     manifestFileReader,
+                    manifestListReader.readDeltaManifests(cherryPickSnapshot),
                     appendTableFiles,
                     updatedSchema);
-            readManifestEntry(
-                    cherryPickSnapshot,
-                    manifestListReader,
+
+            // 读取 change log
+            readAndUpdateManifestEntry(
                     manifestFileReader,
+                    manifestListReader.readChangelogManifests(cherryPickSnapshot),
                     appendChangelog,
                     updatedSchema);
 
@@ -129,35 +140,48 @@ public class CherryPickSnapshotProcedure extends ProcedureBase {
                     cherryPickSnapshot.logOffsets(),
                     false);
             fileStoreCommit.close();
+            updatedSnapshot = mainTable.store().snapshotManager().latestSnapshot();
         } catch (Throwable e) {
             if (updatedSchema != null) {
-                // TODO : 回滚操作.
+                Long latestSnpId = mainTable.store().snapshotManager().latestSnapshotId();
+                if (latestSnpId != null) {
+                    if (!oldSnapshot.isPresent() || oldSnapshot.get().id() < latestSnpId) {
+                        mainTable
+                                .fileIO()
+                                .deleteQuietly(
+                                        mainTable.schemaManager().toSchemaPath(updatedSchema.id()));
+                    }
+                }
             }
+            throw e;
         }
 
-        return new String[] {"Success"};
+        return new String[] {
+            updatedSnapshot == null
+                    ? "Cherry-pick failed"
+                    : "Cherry-pick to snapshotID : " + updatedSnapshot.id()
+        };
     }
 
-    public List<ManifestEntry> updateDataFileMetaSchemaId(
-            List<ManifestEntry> manifestEntries, TableSchema updateSchema) {
-        return updateSchema == null
-                ? manifestEntries
-                : manifestEntries.stream()
-                        .map(x -> x.copyWithNewFile(x.file().newSchemaId(updateSchema.id())))
-                        .collect(Collectors.toList());
-    }
-
-    public void readManifestEntry(
-            Snapshot cherryPickSnapshot,
-            ManifestList manifestListReader,
+    public void readAndUpdateManifestEntry(
             ManifestFile manifestFileReader,
+            List<ManifestFileMeta> manifestFileMetas,
             List<ManifestEntry> manifestEntryList,
             TableSchema updateSchema) {
-        for (ManifestFileMeta manifestFileMeta :
-                manifestListReader.readDeltaManifests(cherryPickSnapshot)) {
+        for (ManifestFileMeta manifestFileMeta : manifestFileMetas) {
             List<ManifestEntry> manifestEntries =
                     manifestFileReader.read(manifestFileMeta.fileName());
-            manifestEntryList.addAll(updateDataFileMetaSchemaId(manifestEntries, updateSchema));
+            // update schemaId.
+            if (updateSchema != null) {
+                manifestEntries =
+                        manifestEntries.stream()
+                                .map(
+                                        x ->
+                                                x.copyWithNewFile(
+                                                        x.file().newSchemaId(updateSchema.id())))
+                                .collect(Collectors.toList());
+            }
+            manifestEntryList.addAll(manifestEntries);
         }
     }
 }
