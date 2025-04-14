@@ -71,90 +71,91 @@ public class CherryPickSnapshotProcedure extends ProcedureBase {
             throws Catalog.TableNotExistException {
         Identifier identifier = Identifier.fromString(tableId);
         FileStoreTable mainTable = (FileStoreTable) catalog.getTable(identifier);
-        FileStoreTable branchTable = mainTable.switchToBranch(branchName);
-        Snapshot cherryPickSnapshot = branchTable.snapshot(snapshot);
-        Preconditions.checkArgument(
-                cherryPickSnapshot != null
-                        && cherryPickSnapshot.commitKind() == Snapshot.CommitKind.APPEND,
-                "Cherry-pick only support APPEND commitKind snapshot.");
-
-        Optional<Snapshot> oldSnapshot = mainTable.latestSnapshot();
-        TableSchema oldSchema = mainTable.schemaManager().latest().get();
-
-        TableSchema branchSchema =
-                branchTable.schemaManager().schema(cherryPickSnapshot.schemaId());
-        TableSchema updatedSchema = null;
-        Snapshot updatedSnapshot;
-        try {
-
-            Optional<TableSchema> optional =
-                    mainTable
-                            .schemaManager()
-                            .mergeSchema(
-                                    oldSchema,
-                                    branchSchema,
-                                    syncOptions == null || syncOptions,
-                                    true);
-            if (optional.isPresent()) {
-                updatedSchema = optional.get();
-            }
-
-            ManifestList manifestListReader = branchTable.store().manifestListFactory().create();
-            ManifestFile manifestFileReader = branchTable.store().manifestFileFactory().create();
-
-            List<ManifestEntry> appendTableFiles = new ArrayList<>();
-            List<ManifestEntry> appendChangelog = new ArrayList<>();
-            List<IndexManifestEntry> appendHashIndexFiles =
-                    branchTable
-                            .store()
-                            .indexManifestFileFactory()
-                            .create()
-                            .read(cherryPickSnapshot.indexManifest());
-
-            // 读取 append 文件.
-            readAndUpdateManifestEntry(
-                    manifestFileReader,
-                    manifestListReader.readDeltaManifests(cherryPickSnapshot),
-                    appendTableFiles,
-                    updatedSchema);
-
-            // 读取 change log
-            readAndUpdateManifestEntry(
-                    manifestFileReader,
-                    manifestListReader.readChangelogManifests(cherryPickSnapshot),
-                    appendChangelog,
-                    updatedSchema);
-
-            FileStoreCommitImpl fileStoreCommit =
-                    (FileStoreCommitImpl)
-                            mainTable.store().newCommit(cherryPickSnapshot.commitUser(), mainTable);
-            fileStoreCommit.commit(
-                    appendTableFiles,
-                    appendChangelog,
-                    Collections.emptyList(),
-                    Collections.emptyList(),
-                    appendHashIndexFiles,
-                    Collections.emptyList(),
-                    cherryPickSnapshot.commitIdentifier(),
-                    cherryPickSnapshot.watermark(),
-                    cherryPickSnapshot.logOffsets(),
-                    false);
-            fileStoreCommit.close();
-            updatedSnapshot = mainTable.store().snapshotManager().latestSnapshot();
-        } catch (Throwable e) {
-            if (updatedSchema != null) {
-                Long latestSnpId = mainTable.store().snapshotManager().latestSnapshotId();
-                if (latestSnpId != null) {
-                    if (!oldSnapshot.isPresent() || oldSnapshot.get().id() < latestSnpId) {
-                        mainTable
-                                .fileIO()
-                                .deleteQuietly(
-                                        mainTable.schemaManager().toSchemaPath(updatedSchema.id()));
-                    }
-                }
-            }
-            throw e;
-        }
+        Snapshot updatedSnapshot = mainTable.cherryPick(branchName, snapshot);
+//        FileStoreTable branchTable = mainTable.switchToBranch(branchName);
+//        Snapshot cherryPickSnapshot = branchTable.snapshot(snapshot);
+//        Preconditions.checkArgument(
+//                cherryPickSnapshot != null
+//                        && cherryPickSnapshot.commitKind() == Snapshot.CommitKind.APPEND,
+//                "Cherry-pick only support APPEND commitKind snapshot.");
+//
+//        Optional<Snapshot> oldSnapshot = mainTable.latestSnapshot();
+//        TableSchema oldSchema = mainTable.schemaManager().latest().get();
+//
+//        TableSchema branchSchema =
+//                branchTable.schemaManager().schema(cherryPickSnapshot.schemaId());
+//        TableSchema updatedSchema = null;
+//        Snapshot updatedSnapshot;
+//        try {
+//
+//            Optional<TableSchema> optional =
+//                    mainTable
+//                            .schemaManager()
+//                            .mergeSchema(
+//                                    oldSchema,
+//                                    branchSchema,
+//                                    syncOptions == null || syncOptions,
+//                                    true);
+//            if (optional.isPresent()) {
+//                updatedSchema = optional.get();
+//            }
+//
+//            ManifestList manifestListReader = branchTable.store().manifestListFactory().create();
+//            ManifestFile manifestFileReader = branchTable.store().manifestFileFactory().create();
+//
+//            List<ManifestEntry> appendTableFiles = new ArrayList<>();
+//            List<ManifestEntry> appendChangelog = new ArrayList<>();
+//            List<IndexManifestEntry> appendHashIndexFiles =
+//                    branchTable
+//                            .store()
+//                            .indexManifestFileFactory()
+//                            .create()
+//                            .read(cherryPickSnapshot.indexManifest());
+//
+//            // 读取 append 文件.
+//            readAndUpdateManifestEntry(
+//                    manifestFileReader,
+//                    manifestListReader.readDeltaManifests(cherryPickSnapshot),
+//                    appendTableFiles,
+//                    updatedSchema);
+//
+//            // 读取 change log
+//            readAndUpdateManifestEntry(
+//                    manifestFileReader,
+//                    manifestListReader.readChangelogManifests(cherryPickSnapshot),
+//                    appendChangelog,
+//                    updatedSchema);
+//
+//            FileStoreCommitImpl fileStoreCommit =
+//                    (FileStoreCommitImpl)
+//                            mainTable.store().newCommit(cherryPickSnapshot.commitUser(), mainTable);
+//            fileStoreCommit.commit(
+//                    appendTableFiles,
+//                    appendChangelog,
+//                    Collections.emptyList(),
+//                    Collections.emptyList(),
+//                    appendHashIndexFiles,
+//                    Collections.emptyList(),
+//                    cherryPickSnapshot.commitIdentifier(),
+//                    cherryPickSnapshot.watermark(),
+//                    cherryPickSnapshot.logOffsets(),
+//                    false);
+//            fileStoreCommit.close();
+//            updatedSnapshot = mainTable.store().snapshotManager().latestSnapshot();
+//        } catch (Throwable e) {
+//            if (updatedSchema != null) {
+//                Long latestSnpId = mainTable.store().snapshotManager().latestSnapshotId();
+//                if (latestSnpId != null) {
+//                    if (!oldSnapshot.isPresent() || oldSnapshot.get().id() < latestSnpId) {
+//                        mainTable
+//                                .fileIO()
+//                                .deleteQuietly(
+//                                        mainTable.schemaManager().toSchemaPath(updatedSchema.id()));
+//                    }
+//                }
+//            }
+//            throw e;
+//        }
 
         return new String[] {
             updatedSnapshot == null

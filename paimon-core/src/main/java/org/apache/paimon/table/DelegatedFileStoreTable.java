@@ -264,6 +264,11 @@ public abstract class DelegatedFileStoreTable implements FileStoreTable {
     }
 
     @Override
+    public Snapshot cherryPick(String branchName, long snapshotId) {
+       return wrapped.cherryPick(branchName, snapshotId);
+    }
+
+    @Override
     public ExpireSnapshots newExpireSnapshots() {
         return wrapped.newExpireSnapshots();
     }

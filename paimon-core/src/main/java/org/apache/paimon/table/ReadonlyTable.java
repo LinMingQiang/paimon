@@ -250,6 +250,15 @@ public interface ReadonlyTable extends InnerTable {
     }
 
     @Override
+    default Snapshot cherryPick(String branchName, long snapshotId) {
+        throw new UnsupportedOperationException(
+                String.format(
+                        "Readonly Table %s does not support cherry-pick.",
+                        this.getClass().getSimpleName()));
+    }
+
+
+    @Override
     default ExpireSnapshots newExpireSnapshots() {
         throw new UnsupportedOperationException(
                 String.format(
