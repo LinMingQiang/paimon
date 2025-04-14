@@ -727,6 +727,7 @@ public class SchemaManager implements Serializable {
                 SchemaMergingUtils.mergeSchemas(
                         current, new RowType(false, update.fields()), allowExplicitCast);
         if (mergeOptions) {
+            // TODO : 参考 alter table，看看这些参数怎么检测的.
             newSchema =
                     newSchema.copy(
                             SchemaMergingUtils.mergeOptions(current.options(), update.options()));

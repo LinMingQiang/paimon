@@ -343,11 +343,6 @@ public interface FormatTable extends Table {
     }
 
     @Override
-    default Snapshot cherryPick(String branchName, long snapshotId) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
     default ExpireSnapshots newExpireSnapshots() {
         throw new UnsupportedOperationException();
     }

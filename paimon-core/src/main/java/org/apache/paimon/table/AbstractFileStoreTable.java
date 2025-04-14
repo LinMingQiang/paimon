@@ -62,9 +62,9 @@ import org.apache.paimon.utils.SnapshotManager;
 import org.apache.paimon.utils.SnapshotNotExistException;
 import org.apache.paimon.utils.StringUtils;
 import org.apache.paimon.utils.TagManager;
+import org.apache.paimon.utils.VersionControlOperator;
 
 import org.apache.paimon.shade.caffeine2.com.github.benmanes.caffeine.cache.Cache;
-import org.apache.paimon.utils.VersionControlOperator;
 
 import javax.annotation.Nullable;
 
@@ -670,12 +670,6 @@ abstract class AbstractFileStoreTable implements FileStoreTable {
     }
 
     @Override
-    public Snapshot cherryPick(String branchName, long snapshotId) {
-        VersionControlOperator vbo = new VersionControlOperator(this);
-        return vbo.cherryPick(branchName, snapshotId);
-    }
-
-    @Override
     public void rollbackTo(String tagName) {
         SnapshotManager snapshotManager = snapshotManager();
         try {
@@ -720,6 +714,11 @@ abstract class AbstractFileStoreTable implements FileStoreTable {
         }
         return new FileSystemBranchManager(
                 fileIO, path, snapshotManager(), tagManager(), schemaManager());
+    }
+
+    @Override
+    public VersionControlOperator versionControlOperator() {
+        return new VersionControlOperator(this, catalogEnvironment);
     }
 
     @Override

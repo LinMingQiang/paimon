@@ -45,6 +45,7 @@ import org.apache.paimon.utils.ChangelogManager;
 import org.apache.paimon.utils.SimpleFileReader;
 import org.apache.paimon.utils.SnapshotManager;
 import org.apache.paimon.utils.TagManager;
+import org.apache.paimon.utils.VersionControlOperator;
 
 import java.util.List;
 import java.util.Map;
@@ -209,6 +210,11 @@ public class ReadOptimizedTable implements DataTable, ReadonlyTable {
     @Override
     public BranchManager branchManager() {
         return wrapped.branchManager();
+    }
+
+    @Override
+    public VersionControlOperator versionControlOperator() {
+        return wrapped.versionControlOperator();
     }
 
     @Override

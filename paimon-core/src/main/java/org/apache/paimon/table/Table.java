@@ -181,10 +181,6 @@ public interface Table extends Serializable {
     @Experimental
     void fastForward(String branchName);
 
-    /** Cherry-pick snapshot from branch to current branch. */
-    @Experimental
-    Snapshot cherryPick(String branchName, long snapshotId);
-
     /** Manually expire snapshots, parameters can be controlled independently of table options. */
     @Experimental
     ExpireSnapshots newExpireSnapshots();

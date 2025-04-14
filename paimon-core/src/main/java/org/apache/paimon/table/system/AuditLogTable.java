@@ -66,6 +66,7 @@ import org.apache.paimon.utils.ProjectedRow;
 import org.apache.paimon.utils.SimpleFileReader;
 import org.apache.paimon.utils.SnapshotManager;
 import org.apache.paimon.utils.TagManager;
+import org.apache.paimon.utils.VersionControlOperator;
 
 import javax.annotation.Nullable;
 
@@ -211,6 +212,11 @@ public class AuditLogTable implements DataTable, ReadonlyTable {
     @Override
     public BranchManager branchManager() {
         return wrapped.branchManager();
+    }
+
+    @Override
+    public VersionControlOperator versionControlOperator() {
+        return wrapped.versionControlOperator();
     }
 
     @Override

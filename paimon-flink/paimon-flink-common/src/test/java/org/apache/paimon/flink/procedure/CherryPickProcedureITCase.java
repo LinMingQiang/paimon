@@ -28,7 +28,9 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -43,36 +45,37 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
     }
 
     @Test
-    public void testCherryPickWithAddCol() throws Exception {
-        sql(
-                "CREATE TABLE T ("
-                        + " k INT"
-                        + ", v STRING"
-                        + ", pt STRING"
-                        + ", PRIMARY KEY (pt, k) NOT ENFORCED"
-                        + " ) PARTITIONED BY (pt) WITH ("
-                        + " 'bucket' = '-1'"
-                        + ",'write-only' = 'true' \n"
-                        + ",'changelog-producer' = 'input' \n"
-                        + ",'file.format' = 'parquet' \n"
-                        + " )");
+    public void testCherryPick() throws Exception {
+        createBranch(Collections.emptyMap());
+        FileStoreTable mainTable;
+        FileStoreTable branchTable = paimonTable("T$branch_test");
+        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(1);
+        sql("INSERT INTO `T$branch_test` VALUES " + "(1, 'branch-apple', 'pt')");
+        branchTable = paimonTable("T$branch_test");
+        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
 
-        sql("INSERT INTO T VALUES" + " (1, 'apple', 'pt')");
+        sql("CALL sys.cherry_pick('%s', '%s', %s)", "default.T", "test", 2);
+        mainTable = paimonTable("T");
+        assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
 
-        sql("CALL sys.create_tag('default.T', 'tag1', 1)");
+        assertThat(collectResult("SELECT * FROM T"))
+                .containsExactlyInAnyOrder("+I[1, branch-apple, pt]");
+    }
 
-        sql("CALL sys.create_branch('default.T', 'test', 'tag1')");
+    @Test
+    public void testCherryPickWithBranchAddCol() throws Exception {
 
-        FileStoreTable mainTable = paimonTable("T");
+        createBranch(Collections.emptyMap());
+        FileStoreTable mainTable;
         FileStoreTable branchTable = paimonTable("T$branch_test");
         assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(1);
 
         // Add v2 column for branch table.
         sql("ALTER TABLE `T$branch_test` ADD (v2 STRING)");
-        sql("INSERT INTO `T$branch_test` VALUES " + "(1, 'branch-apple', 'pt', 'v2')");
+        sql("INSERT INTO `T$branch_test` VALUES(1, 'branch-apple', 'pt', 'branch_col_value')");
 
         assertThat(collectResult("SELECT * FROM `T$branch_test`"))
-                .containsExactlyInAnyOrder("+I[1, branch-apple, pt, v2]");
+                .containsExactlyInAnyOrder("+I[1, branch-apple, pt, branch_col_value]");
         branchTable = paimonTable("T$branch_test");
         assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
         assertThat(branchTable.schema().fields().size()).isEqualTo(4);
@@ -84,12 +87,50 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
         assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(3);
         assertThat(mainTable.schema().fields().size()).isEqualTo(4);
 
+        // 因为 主分支在最后写入数据，所以 分支新增字段的数据会被 null 覆盖，要想有，需要用部分更新策略.
         assertThat(collectResult("SELECT * FROM T"))
-                .containsExactlyInAnyOrder("+I[1, main-apple, pt, null]");
+                .containsExactlyInAnyOrder("+I[1, main-apple, pt, branch_col_value]");
     }
 
     @Test
     public void testCherryPickWithSchemaMerge() throws Exception {
+        createBranch(Collections.emptyMap());
+        FileStoreTable mainTable;
+        FileStoreTable branchTable = paimonTable("T$branch_test");
+        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(1);
+
+        // Add v2 column for branch table.
+        sql("ALTER TABLE `T$branch_test` ADD (branch_col STRING)");
+        sql("INSERT INTO `T$branch_test` VALUES(1, 'branch-apple', 'pt', 'branch_col_value')");
+
+        assertThat(collectResult("SELECT * FROM `T$branch_test`"))
+                .containsExactlyInAnyOrder("+I[1, branch-apple, pt, branch_col_value]");
+        branchTable = paimonTable("T$branch_test");
+        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
+        assertThat(branchTable.schema().fields().size()).isEqualTo(4);
+
+        sql("ALTER TABLE `T` ADD (main_col STRING)");
+        sql("INSERT INTO T VALUES" + " (1, 'apple', 'pt', 'main_col_value')");
+
+        mainTable = paimonTable("T");
+        assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
+        assertThat(mainTable.schema().fields().size()).isEqualTo(4);
+
+        // Now, we get :
+        // main branch : snp-1,snp-2 (new col main_col)
+        // test branch : snp-1,snp-2 (new col branch_col)
+
+        sql("CALL sys.cherry_pick('%s', '%s', %s)", "default.T", "test", 2);
+        mainTable = paimonTable("T");
+        assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(3);
+        assertThat(mainTable.schema().fields().size()).isEqualTo(5);
+
+        // 因为分钟数据要早于 主分支写入，按照写入时间来排序的话， main 分支写入的数据 会导致此字段为 null. 应该使用 部分更新.
+        assertThat(collectResult("SELECT * FROM T"))
+                .containsExactlyInAnyOrder("+I[1, apple, pt, main_col_value, branch_col_value]");
+    }
+
+    public void createBranch(Map<String, String> options) {
         sql(
                 "CREATE TABLE T ("
                         + " k INT"
@@ -101,50 +142,13 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
                         + ",'write-only' = 'true' \n"
                         + ",'changelog-producer' = 'input' \n"
                         + ",'file.format' = 'parquet' \n"
+                        + ",'merge-engine' = 'partial-update' \n"
                         + " )");
 
         sql("INSERT INTO T VALUES" + " (1, 'apple', 'pt')");
 
         sql("CALL sys.create_tag('default.T', 'tag1', 1)");
-
         sql("CALL sys.create_branch('default.T', 'test', 'tag1')");
-
-        FileStoreTable mainTable = paimonTable("T");
-        FileStoreTable branchTable = paimonTable("T$branch_test");
-        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(1);
-
-        // Add v2 column for branch table.
-        sql("ALTER TABLE `T$branch_test` ADD (v2 STRING)");
-        sql("INSERT INTO `T$branch_test` VALUES " + "(1, 'branch-apple', 'pt', 'v2')");
-
-        assertThat(collectResult("SELECT * FROM `T$branch_test`"))
-                .containsExactlyInAnyOrder("+I[1, branch-apple, pt, v2]");
-        branchTable = paimonTable("T$branch_test");
-        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
-        assertThat(branchTable.schema().fields().size()).isEqualTo(4);
-
-        sql("INSERT INTO T VALUES" + " (1, 'main-apple', 'pt')");
-        sql("ALTER TABLE `T` ADD (v3 STRING)");
-        sql("INSERT INTO T VALUES" + " (1, 'main-new-apple', 'pt', 'v3')");
-
-        mainTable = paimonTable("T");
-        assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(3);
-        assertThat(mainTable.schema().fields().size()).isEqualTo(4);
-
-        sql("INSERT INTO `T$branch_test` VALUES " + "(2, 'new-branch-apple', 'pt', 'v2')");
-
-        branchTable = paimonTable("T$branch_test");
-        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(3);
-
-        sql("CALL sys.cherry_pick('%s', '%s', %s)", "default.T", "test", 3);
-        mainTable = paimonTable("T");
-        assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(4);
-        assertThat(mainTable.schema().fields().size()).isEqualTo(5);
-
-        assertThat(collectResult("SELECT * FROM T"))
-                .containsExactlyInAnyOrder(
-                        "+I[1, main-new-apple, pt, v3, null]",
-                        "+I[2, new-branch-apple, pt, null, v2]");
     }
 
     private List<String> collectResult(String sql) throws Exception {

@@ -1,3 +1,21 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.apache.paimon.utils;
 
 import org.apache.paimon.Snapshot;
@@ -8,6 +26,7 @@ import org.apache.paimon.manifest.ManifestFileMeta;
 import org.apache.paimon.manifest.ManifestList;
 import org.apache.paimon.operation.FileStoreCommitImpl;
 import org.apache.paimon.schema.TableSchema;
+import org.apache.paimon.table.CatalogEnvironment;
 import org.apache.paimon.table.FileStoreTable;
 
 import java.util.ArrayList;
@@ -16,15 +35,20 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+/** Version control operator. */
 public class VersionControlOperator {
-    public FileStoreTable masterTable;
-    public boolean syncCoreOptions;
+    protected final FileStoreTable masterTable;
+    protected boolean overwriteOptions;
+    protected final CatalogEnvironment catalogEnvironment;
 
-    public VersionControlOperator(FileStoreTable masterTable) {
+    public VersionControlOperator(
+            FileStoreTable masterTable, CatalogEnvironment catalogEnvironment) {
+        this.catalogEnvironment = catalogEnvironment;
         this.masterTable = masterTable;
     }
 
-    public Snapshot cherryPick(String fromBranch,long snapshotId) {
+    /** Cherry-pick snapshot from branch to current branch. */
+    public Snapshot cherryPick(String fromBranch, long snapshotId) {
         FileStoreTable branchTable = masterTable.switchToBranch(fromBranch);
         Snapshot cherryPickSnapshot = branchTable.snapshot(snapshotId);
         Preconditions.checkArgument(
@@ -44,11 +68,7 @@ public class VersionControlOperator {
             Optional<TableSchema> optional =
                     masterTable
                             .schemaManager()
-                            .mergeSchema(
-                                    oldSchema,
-                                    branchSchema,
-                                    syncCoreOptions,
-                                    true);
+                            .mergeSchema(oldSchema, branchSchema, overwriteOptions, true);
             if (optional.isPresent()) {
                 updatedSchema = optional.get();
             }
@@ -81,7 +101,9 @@ public class VersionControlOperator {
 
             FileStoreCommitImpl fileStoreCommit =
                     (FileStoreCommitImpl)
-                            masterTable.store().newCommit(cherryPickSnapshot.commitUser(), masterTable);
+                            masterTable
+                                    .store()
+                                    .newCommit(cherryPickSnapshot.commitUser(), masterTable);
             fileStoreCommit.commit(
                     appendTableFiles,
                     appendChangelog,
@@ -103,7 +125,9 @@ public class VersionControlOperator {
                         masterTable
                                 .fileIO()
                                 .deleteQuietly(
-                                        masterTable.schemaManager().toSchemaPath(updatedSchema.id()));
+                                        masterTable
+                                                .schemaManager()
+                                                .toSchemaPath(updatedSchema.id()));
                     }
                 }
             }
@@ -112,37 +136,12 @@ public class VersionControlOperator {
         return updatedSnapshot;
     }
 
-    public static Builder builder() {
-        return new Builder();
+    public VersionControlOperator overwriteOptions(boolean overwriteOptions) {
+        this.overwriteOptions = overwriteOptions;
+        return this;
     }
 
-    public static class Builder {
-        public long snapshotId;
-        public FileStoreTable masterTable;
-        public FileStoreTable branchTable;
-        public boolean syncCoreOptions;
-
-        public Builder cherryPickSnapshotId(long snapshotId) {
-            this.snapshotId = snapshotId;
-            return this;
-        }
-
-        public Builder masterTable(FileStoreTable masterTable) {
-            this.masterTable = masterTable;
-            return this;
-        }
-
-        public Builder syncCoreOptions(boolean syncCoreOptions) {
-            this.syncCoreOptions = syncCoreOptions;
-            return this;
-        }
-
-        public VersionControlOperator build() {
-            return new VersionControlOperator(masterTable);
-        }
-    }
-
-    public void readAndUpdateManifestEntry(
+    private void readAndUpdateManifestEntry(
             ManifestFile manifestFileReader,
             List<ManifestFileMeta> manifestFileMetas,
             List<ManifestEntry> manifestEntryList,
