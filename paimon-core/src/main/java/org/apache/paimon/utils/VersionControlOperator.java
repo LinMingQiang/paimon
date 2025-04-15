@@ -19,6 +19,7 @@
 package org.apache.paimon.utils;
 
 import org.apache.paimon.Snapshot;
+import org.apache.paimon.annotation.VisibleForTesting;
 import org.apache.paimon.manifest.IndexManifestEntry;
 import org.apache.paimon.manifest.ManifestEntry;
 import org.apache.paimon.manifest.ManifestFile;
@@ -38,8 +39,9 @@ import java.util.stream.Collectors;
 /** Version control operator. */
 public class VersionControlOperator {
     protected final FileStoreTable masterTable;
-    protected boolean overwriteOptions;
     protected final CatalogEnvironment catalogEnvironment;
+
+    protected boolean overwriteOptions;
 
     public VersionControlOperator(
             FileStoreTable masterTable, CatalogEnvironment catalogEnvironment) {
@@ -57,27 +59,22 @@ public class VersionControlOperator {
                 "Cherry-pick only support APPEND commitKind snapshot.");
 
         Optional<Snapshot> oldSnapshot = masterTable.latestSnapshot();
-        TableSchema oldSchema = masterTable.schemaManager().latest().get();
+        TableSchema baseSchema = masterTable.schemaManager().latest().get();
 
-        TableSchema branchSchema =
-                branchTable.schemaManager().schema(cherryPickSnapshot.schemaId());
+        TableSchema pickSchema = branchTable.schemaManager().schema(cherryPickSnapshot.schemaId());
         TableSchema updatedSchema = null;
         Snapshot updatedSnapshot;
         try {
 
-            Optional<TableSchema> optional =
-                    masterTable
-                            .schemaManager()
-                            .mergeSchema(oldSchema, branchSchema, overwriteOptions, true);
-            if (optional.isPresent()) {
-                updatedSchema = optional.get();
-            }
+            updatedSchema = mergeSchemaAndCommit(baseSchema, pickSchema);
 
             ManifestList manifestListReader = branchTable.store().manifestListFactory().create();
             ManifestFile manifestFileReader = branchTable.store().manifestFileFactory().create();
 
             List<ManifestEntry> appendTableFiles = new ArrayList<>();
             List<ManifestEntry> appendChangelog = new ArrayList<>();
+
+            // Read append index data files.
             List<IndexManifestEntry> appendHashIndexFiles =
                     branchTable
                             .store()
@@ -85,55 +82,96 @@ public class VersionControlOperator {
                             .create()
                             .read(cherryPickSnapshot.indexManifest());
 
-            // 读取 append 文件.
+            // Read append data files.
             readAndUpdateManifestEntry(
                     manifestFileReader,
                     manifestListReader.readDeltaManifests(cherryPickSnapshot),
                     appendTableFiles,
                     updatedSchema);
 
-            // 读取 change log
+            // Read append change-log data files.
             readAndUpdateManifestEntry(
                     manifestFileReader,
                     manifestListReader.readChangelogManifests(cherryPickSnapshot),
                     appendChangelog,
                     updatedSchema);
 
-            FileStoreCommitImpl fileStoreCommit =
-                    (FileStoreCommitImpl)
-                            masterTable
-                                    .store()
-                                    .newCommit(cherryPickSnapshot.commitUser(), masterTable);
-            fileStoreCommit.commit(
-                    appendTableFiles,
-                    appendChangelog,
-                    Collections.emptyList(),
-                    Collections.emptyList(),
-                    appendHashIndexFiles,
-                    Collections.emptyList(),
-                    cherryPickSnapshot.commitIdentifier(),
-                    cherryPickSnapshot.watermark(),
-                    cherryPickSnapshot.logOffsets(),
-                    false);
-            fileStoreCommit.close();
-            updatedSnapshot = masterTable.store().snapshotManager().latestSnapshot();
+            updatedSnapshot =
+                    commitToTargetMaster(
+                            appendTableFiles,
+                            appendChangelog,
+                            Collections.emptyList(),
+                            Collections.emptyList(),
+                            appendHashIndexFiles,
+                            Collections.emptyList(),
+                            cherryPickSnapshot);
+
         } catch (Throwable e) {
-            if (updatedSchema != null) {
-                Long latestSnpId = masterTable.store().snapshotManager().latestSnapshotId();
-                if (latestSnpId != null) {
-                    if (!oldSnapshot.isPresent() || oldSnapshot.get().id() < latestSnpId) {
-                        masterTable
-                                .fileIO()
-                                .deleteQuietly(
-                                        masterTable
-                                                .schemaManager()
-                                                .toSchemaPath(updatedSchema.id()));
-                    }
-                }
-            }
-            throw e;
+            fallBackCherryPick(updatedSchema, oldSnapshot.orElse(null));
+            throw new RuntimeException("cherryPick failed.", e);
         }
         return updatedSnapshot;
+    }
+
+    @VisibleForTesting
+    public Snapshot commitToTargetMaster(
+            List<ManifestEntry> appendTableFiles,
+            List<ManifestEntry> appendChangelog,
+            List<ManifestEntry> compactTableFiles,
+            List<ManifestEntry> compactChangelog,
+            List<IndexManifestEntry> appendHashIndexFiles,
+            List<IndexManifestEntry> compactDvIndexFiles,
+            Snapshot baseSnapshot) {
+
+        FileStoreCommitImpl fileStoreCommit =
+                (FileStoreCommitImpl)
+                        masterTable.store().newCommit(baseSnapshot.commitUser(), masterTable);
+        fileStoreCommit.commit(
+                appendTableFiles,
+                appendChangelog,
+                compactTableFiles,
+                compactChangelog,
+                appendHashIndexFiles,
+                compactDvIndexFiles,
+                baseSnapshot.commitIdentifier(),
+                baseSnapshot.watermark(),
+                baseSnapshot.logOffsets(),
+                false);
+
+        fileStoreCommit.close();
+        return masterTable.store().snapshotManager().latestSnapshot();
+    }
+
+    @VisibleForTesting
+    public TableSchema mergeSchemaAndCommit(TableSchema oldSchema, TableSchema branchSchema)
+            throws Exception {
+        TableSchema updatedSchema = null;
+        Optional<TableSchema> mergedSchema =
+                masterTable
+                        .schemaManager()
+                        .mergeSchema(oldSchema, branchSchema, overwriteOptions, true);
+
+        // Commit new schema.
+        if (mergedSchema.isPresent() && masterTable.schemaManager().commit(mergedSchema.get())) {
+            updatedSchema = mergedSchema.get();
+            Preconditions.checkState(
+                    updatedSchema.id() - 1 == oldSchema.id(), "schema id has been changed.");
+        }
+        return updatedSchema;
+    }
+
+    @VisibleForTesting
+    public void fallBackCherryPick(TableSchema updatedSchema, Snapshot beforeSnapshot) {
+        Snapshot latestSnp = masterTable.store().snapshotManager().latestSnapshot();
+        if (updatedSchema != null && latestSnp != null) {
+            // newSchema has not been use, we need to delete the updatedSchema.
+            if (beforeSnapshot != null && beforeSnapshot.schemaId() == latestSnp.schemaId()) {
+                masterTable
+                        .fileIO()
+                        .deleteQuietly(
+                                masterTable.schemaManager().toSchemaPath(updatedSchema.id()));
+            }
+        }
     }
 
     public VersionControlOperator overwriteOptions(boolean overwriteOptions) {
@@ -141,6 +179,7 @@ public class VersionControlOperator {
         return this;
     }
 
+    /** Read ManifestEntry from ManifestFile and update schemaId if necessary. */
     private void readAndUpdateManifestEntry(
             ManifestFile manifestFileReader,
             List<ManifestFileMeta> manifestFileMetas,

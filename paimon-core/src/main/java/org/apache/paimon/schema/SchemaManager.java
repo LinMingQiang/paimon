@@ -727,7 +727,6 @@ public class SchemaManager implements Serializable {
                 SchemaMergingUtils.mergeSchemas(
                         current, new RowType(false, update.fields()), allowExplicitCast);
         if (mergeOptions) {
-            // TODO : 参考 alter table，看看这些参数怎么检测的.
             newSchema =
                     newSchema.copy(
                             SchemaMergingUtils.mergeOptions(current.options(), update.options()));
@@ -736,15 +735,7 @@ public class SchemaManager implements Serializable {
         if (current.equals(newSchema)) {
             return Optional.empty();
         } else {
-            try {
-                if (commit(newSchema)) {
-                    return Optional.of(newSchema);
-                } else {
-                    throw new RuntimeException("Failed to commit the schema.");
-                }
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to commit the schema.", e);
-            }
+            return Optional.of(newSchema);
         }
     }
 

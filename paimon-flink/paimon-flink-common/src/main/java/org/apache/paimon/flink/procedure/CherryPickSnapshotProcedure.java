@@ -28,7 +28,7 @@ import org.apache.flink.table.annotation.DataTypeHint;
 import org.apache.flink.table.annotation.ProcedureHint;
 import org.apache.flink.table.procedure.ProcedureContext;
 
-/** CherryPickSnapshotProcedure. */
+/** Cherry-pick snapshot from branch to current branch. */
 public class CherryPickSnapshotProcedure extends ProcedureBase {
 
     public static final String IDENTIFIER = "cherry_pick";
