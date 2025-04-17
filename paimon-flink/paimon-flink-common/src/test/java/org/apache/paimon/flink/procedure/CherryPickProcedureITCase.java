@@ -236,10 +236,9 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
         }
     }
 
-    // TODO : 需要测试 Append 表， Append 表是有索引的.这个索引在 DataFileMeta的 extraFile 里.
     @Test
-    public void testAppendOnlyTableIndexDataFiles() throws Exception {
-        createBranch(false, 1, CoreOptions.ChangelogProducer.INPUT);
+    public void testAppendOnlyTable() throws Exception {
+        createBranch(false, -1, null);
         FileStoreTable mainTable;
         FileStoreTable branchTable = paimonTable("T$branch_test");
         assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(1);
@@ -252,7 +251,17 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
         assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
 
         assertThat(collectResult("SELECT * FROM T"))
-                .containsExactlyInAnyOrder("+I[1, branch-apple, pt]");
+                .containsExactlyInAnyOrder("+I[1, apple, pt]", "+I[1, branch-apple, pt]");
+    }
+
+    @Test
+    public void testAppendTableWithIndexDatafiles() throws Exception {
+
+    }
+
+    @Test
+    public void testDeletionVector()    {
+
     }
 
     public void createBranch(
@@ -267,13 +276,13 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
                         + " ) PARTITIONED BY (pt) WITH ("
                         + " 'bucket' = '%s'"
                         + ",'write-only' = 'true' \n"
-                        + ",'changelog-producer' = '%s' \n"
+                        + "%s"
                         + ",'file.format' = 'parquet' \n"
                         + ",'merge-engine' = 'partial-update' \n"
                         + " )",
                 primaryTable ? ", PRIMARY KEY (pt, k) NOT ENFORCED" : "",
                 bucketNum,
-                changelogProducer.toString());
+                changelogProducer == null ?  "" : ",'changelog-producer' = '"+ changelogProducer +"'");
 
         sql("INSERT INTO T VALUES" + " (1, 'apple', 'pt')");
 
