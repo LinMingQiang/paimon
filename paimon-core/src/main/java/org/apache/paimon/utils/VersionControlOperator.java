@@ -55,6 +55,7 @@ public class VersionControlOperator {
     public Snapshot cherryPick(String fromBranch, long snapshotId) {
         FileStoreTable branchTable = masterTable.switchToBranch(fromBranch);
         Snapshot cherryPickSnapshot = branchTable.snapshot(snapshotId);
+
         Preconditions.checkArgument(
                 cherryPickSnapshot != null
                         && cherryPickSnapshot.commitKind() == Snapshot.CommitKind.APPEND,
@@ -67,7 +68,8 @@ public class VersionControlOperator {
 
         Preconditions.checkArgument(
                 masterTable.primaryKeys().isEmpty()
-                        || masterTable.coreOptions().changelogProducer() == CoreOptions.ChangelogProducer.INPUT,
+                        || masterTable.coreOptions().changelogProducer()
+                                == CoreOptions.ChangelogProducer.INPUT,
                 "Cherry-pick is only supported in append-only table or primary key table with INPUT changelogProducer.");
 
         Optional<Snapshot> oldSnapshot = masterTable.latestSnapshot();
@@ -85,14 +87,6 @@ public class VersionControlOperator {
 
             List<ManifestEntry> appendTableFiles = new ArrayList<>();
             List<ManifestEntry> appendChangelog = new ArrayList<>();
-
-            // Read append index data files.
-            List<IndexManifestEntry> appendHashIndexFiles =
-                    branchTable
-                            .store()
-                            .indexManifestFileFactory()
-                            .create()
-                            .read(cherryPickSnapshot.indexManifest());
 
             // Read append data files.
             readAndUpdateManifestEntry(
@@ -114,7 +108,7 @@ public class VersionControlOperator {
                             appendChangelog,
                             Collections.emptyList(),
                             Collections.emptyList(),
-                            appendHashIndexFiles,
+                            Collections.emptyList(),
                             Collections.emptyList(),
                             cherryPickSnapshot);
 
