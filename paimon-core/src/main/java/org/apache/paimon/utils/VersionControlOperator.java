@@ -18,6 +18,7 @@
 
 package org.apache.paimon.utils;
 
+import org.apache.paimon.CoreOptions;
 import org.apache.paimon.Snapshot;
 import org.apache.paimon.annotation.VisibleForTesting;
 import org.apache.paimon.manifest.IndexManifestEntry;
@@ -27,6 +28,7 @@ import org.apache.paimon.manifest.ManifestFileMeta;
 import org.apache.paimon.manifest.ManifestList;
 import org.apache.paimon.operation.FileStoreCommitImpl;
 import org.apache.paimon.schema.TableSchema;
+import org.apache.paimon.table.BucketMode;
 import org.apache.paimon.table.CatalogEnvironment;
 import org.apache.paimon.table.FileStoreTable;
 
@@ -56,7 +58,17 @@ public class VersionControlOperator {
         Preconditions.checkArgument(
                 cherryPickSnapshot != null
                         && cherryPickSnapshot.commitKind() == Snapshot.CommitKind.APPEND,
-                "Cherry-pick only support APPEND commitKind snapshot.");
+                "Cherry-pick is only supported in APPEND commitKind snapshot.");
+
+        Preconditions.checkArgument(
+                masterTable.primaryKeys().isEmpty()
+                        || masterTable.bucketMode() == BucketMode.HASH_FIXED,
+                "Cherry-pick is only supported in append-only or hash-fixed primary key table.");
+
+        Preconditions.checkArgument(
+                masterTable.primaryKeys().isEmpty()
+                        || masterTable.coreOptions().changelogProducer() == CoreOptions.ChangelogProducer.INPUT,
+                "Cherry-pick is only supported in append-only table or primary key table with INPUT changelogProducer.");
 
         Optional<Snapshot> oldSnapshot = masterTable.latestSnapshot();
         TableSchema baseSchema = masterTable.schemaManager().latest().get();

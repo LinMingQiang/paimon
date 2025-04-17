@@ -18,20 +18,23 @@
 
 package org.apache.paimon.flink.procedure;
 
+import org.apache.paimon.Snapshot;
+import org.apache.paimon.catalog.Catalog;
 import org.apache.paimon.flink.CatalogITCaseBase;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.types.DataTypes;
 
+import org.apache.flink.table.api.config.TableConfigOptions;
 import org.apache.flink.types.Row;
 import org.apache.flink.util.CloseableIterator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 
 import static org.apache.paimon.testutils.assertj.PaimonAssertions.anyCauseMatches;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,7 +52,7 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
 
     @Test
     public void testCherryPick() throws Exception {
-        createBranch(Collections.emptyMap());
+        createBranch(true, 1);
         FileStoreTable mainTable;
         FileStoreTable branchTable = paimonTable("T$branch_test");
         assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(1);
@@ -68,7 +71,7 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
     @Test
     public void testCherryPickWithBranchAddCol() throws Exception {
 
-        createBranch(Collections.emptyMap());
+        createBranch(true, 1);
         FileStoreTable mainTable;
         FileStoreTable branchTable = paimonTable("T$branch_test");
         assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(1);
@@ -97,7 +100,7 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
 
     @Test
     public void testCherryPickWithSchemaMerge() throws Exception {
-        createBranch(Collections.emptyMap());
+        createBranch(true, 1);
         FileStoreTable mainTable;
         FileStoreTable branchTable = paimonTable("T$branch_test");
         assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(1);
@@ -135,7 +138,7 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
 
     @Test
     public void testSchemaDataTypeConflict() throws Exception {
-        createBranch(Collections.emptyMap());
+        createBranch(true, 1);
         FileStoreTable mainTable;
         sql("ALTER TABLE `T` ADD (conflict_col DOUBLE)");
         sql("ALTER TABLE `T$branch_test` ADD (conflict_col STRING)");
@@ -161,28 +164,99 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
                                 "Failed to merge data types DATE and INT"));
     }
 
+    // TODO : change log 的集中类型都支持吗？ lookup 是不是不支持？
     @Test
-    public void testCherryPickChangeLog() throws Exception {}
+    public void testCherryPickChangeLogDataFiles() throws Exception {
+        createBranch(true, 1);
+        FileStoreTable mainTable;
+        FileStoreTable branchTable = paimonTable("T$branch_test");
+        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(1);
+        sql("INSERT INTO `T$branch_test` VALUES " + "(1, 'branch-apple', 'pt')");
+        branchTable = paimonTable("T$branch_test");
+        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
 
-    @Test
-    public void testCherryPickIndex() {
-        createBranch(Collections.emptyMap());
+        sql("CALL sys.cherry_pick('%s', '%s', %s)", "default.T", "test", 2);
+        mainTable = paimonTable("T");
+        assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
+
+        assertThat(collectResult("SELECT * FROM T"))
+                .containsExactlyInAnyOrder("+I[1, branch-apple, pt]");
     }
 
-    public void createBranch(Map<String, String> options) {
+    @ParameterizedTest
+    @ValueSource(strings = {"-1", "1"})
+    public void testLimitOfCherryPickSupport(int bucket) throws Exception {
+        createBranch(true, bucket);
+        sql("INSERT INTO `T$branch_test` VALUES " + "(1, 'branch-apple', 'pt')");
+        FileStoreTable branchTable = paimonTable("T$branch_test");
+        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
+
+        if (bucket == 1) {
+            // Do not support COMPACT CommitKind.
+            tEnv.getConfig().set(TableConfigOptions.TABLE_DML_SYNC, true);
+            sql("CALL sys.compact(`table` => 'default.T$branch_test', compact_strategy => 'full')");
+            branchTable = paimonTable("T$branch_test");
+            Snapshot latestSnapshot = branchTable.snapshotManager().latestSnapshot();
+            assertThat(latestSnapshot.id()).isEqualTo(3);
+            assertThat(latestSnapshot.commitKind()).isEqualTo(Snapshot.CommitKind.COMPACT);
+            assertThatThrownBy(
+                            () ->
+                                    sql(
+                                            "CALL sys.cherry_pick('%s', '%s', %s)",
+                                            "default.T", "test", 3))
+                    .satisfies(
+                            anyCauseMatches(
+                                    IllegalArgumentException.class,
+                                    "Cherry-pick is only supported in APPEND commitKind snapshot."));
+        } else {
+            // Do not support dynamic bucket table.
+            assertThatThrownBy(
+                            () ->
+                                    sql(
+                                            "CALL sys.cherry_pick('%s', '%s', %s)",
+                                            "default.T", "test", 2))
+                    .satisfies(
+                            anyCauseMatches(
+                                    IllegalArgumentException.class,
+                                    "Cherry-pick is only supported in append-only or hash-fixed primary key table."));
+        }
+    }
+
+    // TODO : 需要测试 Append 表， Append 表是有索引的.这个索引在 DataFileMeta的 extraFile 里.
+    @Test
+    public void testAppendOnlyTableIndexDataFiles() throws Exception {
+        createBranch(false, 1);
+        FileStoreTable mainTable;
+        FileStoreTable branchTable = paimonTable("T$branch_test");
+        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(1);
+        sql("INSERT INTO `T$branch_test` VALUES " + "(1, 'branch-apple', 'pt')");
+        branchTable = paimonTable("T$branch_test");
+        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
+
+        sql("CALL sys.cherry_pick('%s', '%s', %s)", "default.T", "test", 2);
+        mainTable = paimonTable("T");
+        assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
+
+        assertThat(collectResult("SELECT * FROM T"))
+                .containsExactlyInAnyOrder("+I[1, branch-apple, pt]");
+    }
+
+    public void createBranch(boolean primaryTable, int bucketNum) {
+
         sql(
                 "CREATE TABLE T ("
                         + " k INT"
                         + ", v STRING"
                         + ", pt STRING"
-                        + ", PRIMARY KEY (pt, k) NOT ENFORCED"
+                        + "%s"
                         + " ) PARTITIONED BY (pt) WITH ("
-                        + " 'bucket' = '-1'"
+                        + " 'bucket' = '%s'"
                         + ",'write-only' = 'true' \n"
                         + ",'changelog-producer' = 'input' \n"
                         + ",'file.format' = 'parquet' \n"
                         + ",'merge-engine' = 'partial-update' \n"
-                        + " )");
+                        + " )",
+                primaryTable ? ", PRIMARY KEY (pt, k) NOT ENFORCED" : "", bucketNum);
 
         sql("INSERT INTO T VALUES" + " (1, 'apple', 'pt')");
 
