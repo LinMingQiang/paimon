@@ -18,7 +18,6 @@
 
 package org.apache.paimon.flink.procedure;
 
-import org.apache.paimon.CoreOptions;
 import org.apache.paimon.Snapshot;
 import org.apache.paimon.flink.CatalogITCaseBase;
 import org.apache.paimon.table.FileStoreTable;
@@ -34,7 +33,9 @@ import org.junit.jupiter.params.provider.CsvSource;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.apache.paimon.testutils.assertj.PaimonAssertions.anyCauseMatches;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -50,9 +51,18 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
         super.before();
     }
 
+    public Map<String, String> getCoreOptions() {
+        Map<String, String> options = new HashMap<>();
+        options.put("bucket", "1");
+        options.put("write-only", "true");
+        options.put("merge-engine", "partial-update");
+        options.put("changelog-producer", "input");
+        return options;
+    }
+
     @Test
     public void testCherryPick() throws Exception {
-        createBranch(true, 1, CoreOptions.ChangelogProducer.INPUT);
+        createBranch(true, getCoreOptions());
         FileStoreTable mainTable;
         FileStoreTable branchTable = paimonTable("T$branch_test");
         assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(1);
@@ -71,7 +81,7 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
     @Test
     public void testCherryPickWithBranchAddCol() throws Exception {
 
-        createBranch(true, 1, CoreOptions.ChangelogProducer.INPUT);
+        createBranch(true, getCoreOptions());
         FileStoreTable mainTable;
         FileStoreTable branchTable = paimonTable("T$branch_test");
         assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(1);
@@ -100,7 +110,7 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
 
     @Test
     public void testCherryPickWithSchemaMerge() throws Exception {
-        createBranch(true, 1, CoreOptions.ChangelogProducer.INPUT);
+        createBranch(true, getCoreOptions());
         FileStoreTable mainTable;
         FileStoreTable branchTable = paimonTable("T$branch_test");
         assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(1);
@@ -138,7 +148,7 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
 
     @Test
     public void testSchemaDataTypeConflict() throws Exception {
-        createBranch(true, 1, CoreOptions.ChangelogProducer.INPUT);
+        createBranch(true, getCoreOptions());
         FileStoreTable mainTable;
         sql("ALTER TABLE `T` ADD (conflict_col DOUBLE)");
         sql("ALTER TABLE `T$branch_test` ADD (conflict_col STRING)");
@@ -166,7 +176,7 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
 
     @Test
     public void testCherryPickChangeLogDataFiles() throws Exception {
-        createBranch(true, 1, CoreOptions.ChangelogProducer.INPUT);
+        createBranch(true, getCoreOptions());
         FileStoreTable mainTable;
         FileStoreTable branchTable = paimonTable("T$branch_test");
         assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(1);
@@ -186,7 +196,10 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
     @CsvSource({"-1,INPUT", "1,INPUT", "1,LOOKUP"})
     public void testLimitOfCherryPickSupport(int bucket, String changeLogProducer)
             throws Exception {
-        createBranch(true, bucket, CoreOptions.ChangelogProducer.valueOf(changeLogProducer));
+        Map<String, String> options = getCoreOptions();
+        options.put("bucket", String.valueOf(bucket));
+        options.put("changelog-producer", changeLogProducer);
+        createBranch(true, options);
         sql("INSERT INTO `T$branch_test` VALUES " + "(1, 'branch-apple', 'pt')");
         FileStoreTable branchTable = paimonTable("T$branch_test");
         assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
@@ -219,7 +232,7 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
                         .satisfies(
                                 anyCauseMatches(
                                         IllegalArgumentException.class,
-                                        "Cherry-pick is only supported in append-only table or primary key table with INPUT changelogProducer."));
+                                        "Cherry-pick do not support lookup mode."));
             }
 
         } else {
@@ -238,7 +251,10 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
 
     @Test
     public void testAppendOnlyTable() throws Exception {
-        createBranch(false, -1, null);
+        Map<String, String> options = getCoreOptions();
+        options.put("bucket", String.valueOf(-1));
+        options.remove("changelog-producer");
+        createBranch(false, options);
         FileStoreTable mainTable;
         FileStoreTable branchTable = paimonTable("T$branch_test");
         assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(1);
@@ -256,17 +272,18 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
 
     @Test
     public void testAppendTableWithIndexDatafiles() throws Exception {
+        Map<String, String> options = getCoreOptions();
+        options.put("bucket", String.valueOf(-1));
+        options.remove("changelog-producer");
+        options.put("bucket", String.valueOf(-1));
+        createBranch(false, options);
+
 
     }
 
-    @Test
-    public void testDeletionVector()    {
-
-    }
-
-    public void createBranch(
-            boolean primaryTable, int bucketNum, CoreOptions.ChangelogProducer changelogProducer) {
-
+    public void createBranch(boolean primaryTable, Map<String, String> options) {
+        StringBuilder sb = new StringBuilder();
+        options.forEach((k, v) -> sb.append(String.format(",'%s'='%s'", k, v)));
         sql(
                 "CREATE TABLE T ("
                         + " k INT"
@@ -274,15 +291,10 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
                         + ", pt STRING"
                         + "%s"
                         + " ) PARTITIONED BY (pt) WITH ("
-                        + " 'bucket' = '%s'"
-                        + ",'write-only' = 'true' \n"
                         + "%s"
-                        + ",'file.format' = 'parquet' \n"
-                        + ",'merge-engine' = 'partial-update' \n"
                         + " )",
                 primaryTable ? ", PRIMARY KEY (pt, k) NOT ENFORCED" : "",
-                bucketNum,
-                changelogProducer == null ?  "" : ",'changelog-producer' = '"+ changelogProducer +"'");
+                sb.substring(1, sb.toString().length()));
 
         sql("INSERT INTO T VALUES" + " (1, 'apple', 'pt')");
 

@@ -18,7 +18,6 @@
 
 package org.apache.paimon.utils;
 
-import org.apache.paimon.CoreOptions;
 import org.apache.paimon.Snapshot;
 import org.apache.paimon.annotation.VisibleForTesting;
 import org.apache.paimon.manifest.IndexManifestEntry;
@@ -67,10 +66,7 @@ public class VersionControlOperator {
                 "Cherry-pick is only supported in append-only or hash-fixed primary key table.");
 
         Preconditions.checkArgument(
-                masterTable.primaryKeys().isEmpty()
-                        || masterTable.coreOptions().changelogProducer()
-                                == CoreOptions.ChangelogProducer.INPUT,
-                "Cherry-pick is only supported in append-only table or primary key table with INPUT changelogProducer.");
+                !masterTable.coreOptions().needLookup(), "Cherry-pick do not support lookup mode.");
 
         Optional<Snapshot> oldSnapshot = masterTable.latestSnapshot();
         TableSchema baseSchema = masterTable.schemaManager().latest().get();
