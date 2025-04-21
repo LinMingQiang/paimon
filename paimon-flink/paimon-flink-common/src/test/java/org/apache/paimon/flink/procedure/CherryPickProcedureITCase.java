@@ -21,6 +21,7 @@ package org.apache.paimon.flink.procedure;
 import org.apache.paimon.Snapshot;
 import org.apache.paimon.flink.CatalogITCaseBase;
 import org.apache.paimon.table.FileStoreTable;
+import org.apache.paimon.table.source.DataSplit;
 import org.apache.paimon.types.DataTypes;
 
 import org.apache.flink.table.api.config.TableConfigOptions;
@@ -36,6 +37,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import static org.apache.paimon.testutils.assertj.PaimonAssertions.anyCauseMatches;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -275,10 +277,32 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
         Map<String, String> options = getCoreOptions();
         options.put("bucket", String.valueOf(-1));
         options.remove("changelog-producer");
-        options.put("bucket", String.valueOf(-1));
+        options.put("file-index.bloom-filter.columns", "v");
         createBranch(false, options);
 
+        FileStoreTable mainTable = paimonTable("T");
+        FileStoreTable branchTable = paimonTable("T$branch_test");
+        assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(1);
 
+        sql("INSERT INTO `T$branch_test` VALUES " + "(1, 'branch-apple', 'pt')");
+        List<DataSplit> branchDataSplits =
+                branchTable.newSnapshotReader().withSnapshot(2).read().dataSplits();
+        // assert data index files.
+        assertThat(branchDataSplits.size()).isEqualTo(1);
+        List<String> branchDataIndexFiles =
+                branchDataSplits.get(0).dataFiles().stream()
+                        .flatMap(x -> x.extraFiles().stream())
+                        .collect(Collectors.toList());
+        assertThat(branchDataIndexFiles.size()).isEqualTo(2);
+
+        sql("CALL sys.cherry_pick('%s', '%s', %s)", "default.T", "test", 2);
+
+        mainTable = paimonTable("T");
+        assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
+        List<DataSplit> mainDataSplits =
+                mainTable.newSnapshotReader().withSnapshot(2).read().dataSplits();
+
+        assertThat(branchDataSplits).isEqualTo(mainDataSplits);
     }
 
     public void createBranch(boolean primaryTable, Map<String, String> options) {
