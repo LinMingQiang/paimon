@@ -32,7 +32,7 @@ import static org.apache.spark.sql.types.DataTypes.BooleanType;
 import static org.apache.spark.sql.types.DataTypes.IntegerType;
 import static org.apache.spark.sql.types.DataTypes.StringType;
 
-/** CherryPickSnapshotProcedure. */
+/** Cherry-pick snapshot from branch to current branch. */
 public class CherryPickSnapshotProcedure extends BaseProcedure {
 
     private static final ProcedureParameter[] PARAMETERS =
