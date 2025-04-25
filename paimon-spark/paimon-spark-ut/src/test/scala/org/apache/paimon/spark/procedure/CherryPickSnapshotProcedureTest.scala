@@ -38,7 +38,9 @@ class CherryPickSnapshotProcedureTest extends PaimonSparkTestBase {
     assert(mainTable.snapshotManager().latestSnapshotId() == 1)
     checkAnswer(query(), Row(1, "apple", "pt"))
 
-    spark.sql("CALL paimon.sys.cherry_pick(table => 'test.T', branch => 'test', snapshot => 2)")
+    checkAnswer(
+      spark.sql("CALL paimon.sys.cherry_pick(table => 'test.T', branch => 'test', snapshot => 2)"),
+      Row("Cherry-pick to snapshotID : 2"))
     mainTable = loadTable("T")
     assert(mainTable.snapshotManager().latestSnapshotId() == 2)
 

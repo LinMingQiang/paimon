@@ -27,6 +27,7 @@ import org.apache.spark.sql.connector.catalog.TableCatalog;
 import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
+import org.apache.spark.unsafe.types.UTF8String;
 
 import static org.apache.spark.sql.types.DataTypes.BooleanType;
 import static org.apache.spark.sql.types.DataTypes.IntegerType;
@@ -46,7 +47,7 @@ public class CherryPickSnapshotProcedure extends BaseProcedure {
     private static final StructType OUTPUT_TYPE =
             new StructType(
                     new StructField[] {
-                        new StructField("result", BooleanType, true, Metadata.empty())
+                        new StructField("result", StringType, true, Metadata.empty())
                     });
 
     @Override
@@ -77,7 +78,8 @@ public class CherryPickSnapshotProcedure extends BaseProcedure {
                         .overwriteOptions(overwriteOptions == null || overwriteOptions)
                         .cherryPick(branchName, snapshot);
         return new InternalRow[] {
-            newInternalRow("Cherry-pick to snapshotID : " + updatedSnapshot.id())
+            newInternalRow(
+                    UTF8String.fromString("Cherry-pick to snapshotID : " + updatedSnapshot.id()))
         };
     }
 

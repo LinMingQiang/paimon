@@ -76,6 +76,8 @@ public class VersionControlOperator {
         Snapshot updatedSnapshot;
         try {
 
+            // TODO : 需要增加一个检测，当前 cherry pick 的 file 是否已经存在在 main 了, 也就是一个 数据被 cp 了多次.
+
             updatedSchema = mergeSchemaAndCommit(baseSchema, pickSchema);
 
             ManifestList manifestListReader = branchTable.store().manifestListFactory().create();
