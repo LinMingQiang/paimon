@@ -81,6 +81,23 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
     }
 
     @Test
+    public void testChangeMergeEngine() {
+
+    }
+
+    @Test
+    public void testChangeSequenceField() {
+
+    }
+
+    //  使用默认 sequence.field 时，在数据去重时是按 data 文件的生成时间来排序的, 在 pick 之后，数据的顺序不是 snapshot，而是 datafile 的生成时间.
+    //  想要达到按照 snapshot 的排序效果，有两种方式，一种是 设置Sequence field. 一种是提供一个方式，修改 data file 的时间为快照时间.
+    @Test
+    public void testDataSequenceAfterCherryPick(){
+
+    }
+
+    @Test
     public void testCherryPickWithBranchAddCol() throws Exception {
 
         createBranch(true, getCoreOptions());
