@@ -80,21 +80,86 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
                 .containsExactlyInAnyOrder("+I[1, branch-apple, pt]");
     }
 
+    /** 修改 option 的不可变更参数，在合并时应该失败. */
     @Test
-    public void testChangeMergeEngine() {
+    public void testChangeImmutableOptions() {}
 
+    /**
+     * 使用默认 sequence.field 时，在数据去重时是按数据文件里面的 seq num 来决定的, 正常情况下这个 seq num 是递增的，但是如果你是并发写，或者 pick
+     * 的这种情况，他 seq 是会重复的，那他就不准确了，seq 是会重复的. 想要达到按照 snapshot 的排序效果，有两种方式，一种是 设置Sequence field.
+     * 一种是提供一个方式，修改 data file 的时间为快照时间. 如果是指定 Sequence field，应该是没有问题的. 这是 sequence 排序的
+     * bug，多流并发写的时候，不是按照 快照先后也不是按照文件生成先后，而是这个 seq. 所以在推荐里面： merge-engine=partial-update ， 解决增加字段导致的
+     * null 问题. 配置 sequence.field 解决排序问题.
+     */
+    @Test
+    public void testDataSortingBySequenceNum() throws Exception {
+        createBranch(true, getCoreOptions());
+        FileStoreTable mainTable;
+        FileStoreTable branchTable = paimonTable("T$branch_test");
+        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(1);
+
+        // 先写入 主分支数据.
+        sql("INSERT INTO T VALUES" + " (1, 'apple-2', 'pt')");
+
+        // 再写入分支数据
+        sql("INSERT INTO `T$branch_test` VALUES " + "(1, 'branch-apple', 'pt')");
+        branchTable = paimonTable("T$branch_test");
+        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
+
+        // 然后 pick 分支数据
+        sql("CALL sys.cherry_pick('%s', '%s', %s)", "default.T", "test", 2);
+        mainTable = paimonTable("T");
+        assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(3);
+
+        // 按道理，这个排序顺序应该是分支的数据才对。但是实际他是按 seq num 来排序的.
+        assertThat(collectResult("SELECT * FROM T"))
+                .containsExactlyInAnyOrder("+I[1, apple-2, pt]");
     }
 
+    /** 指定排序字段，测试 pick 之后是否还是有效的. */
     @Test
-    public void testChangeSequenceField() {
+    public void testSpecifySequenceField() throws Exception {
+        StringBuilder sb = new StringBuilder();
+        Map<String, String> options = getCoreOptions();
+        // 不加这个会报错
+        options.put("sequence.field", "seq_field");
+        options.forEach((k, v) -> sb.append(String.format(",'%s'='%s'", k, v)));
+        sql(
+                "CREATE TABLE T ("
+                        + " k INT"
+                        + ", v STRING"
+                        + ", seq_field STRING"
+                        + ", pt STRING"
+                        + ", PRIMARY KEY (pt, k) NOT ENFORCED"
+                        + " ) PARTITIONED BY (pt) WITH ("
+                        + "%s"
+                        + " ) ",
+                sb.substring(1, sb.toString().length()));
 
-    }
+        sql("INSERT INTO T VALUES" + " (1, 'apple', '1' ,'pt')");
+        sql("CALL sys.create_tag('default.T', 'tag1', 1)");
+        sql("CALL sys.create_branch('default.T', 'test', 'tag1')");
 
-    //  使用默认 sequence.field 时，在数据去重时是按 data 文件的生成时间来排序的, 在 pick 之后，数据的顺序不是 snapshot，而是 datafile 的生成时间.
-    //  想要达到按照 snapshot 的排序效果，有两种方式，一种是 设置Sequence field. 一种是提供一个方式，修改 data file 的时间为快照时间.
-    @Test
-    public void testDataSequenceAfterCherryPick(){
+        FileStoreTable mainTable;
+        FileStoreTable branchTable = paimonTable("T$branch_test");
+        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(1);
 
+        // 先写入 主分支数据.
+        sql("INSERT INTO T VALUES" + " (1, 'apple-2', '2', 'pt')");
+
+        // 再写入分支数据
+        sql("INSERT INTO `T$branch_test` VALUES " + "(1, 'branch-apple', '3', 'pt')");
+        branchTable = paimonTable("T$branch_test");
+        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
+
+        // 然后 pick 分支数据
+        sql("CALL sys.cherry_pick('%s', '%s', %s)", "default.T", "test", 2);
+        mainTable = paimonTable("T");
+        assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(3);
+
+        // 根据 seq field 排序.
+        assertThat(collectResult("SELECT * FROM T"))
+                .containsExactlyInAnyOrder("+I[1, branch-apple, 3, pt]");
     }
 
     @Test
