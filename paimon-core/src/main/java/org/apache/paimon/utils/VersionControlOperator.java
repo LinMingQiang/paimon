@@ -117,6 +117,10 @@ public class VersionControlOperator {
         return updatedSnapshot;
     }
 
+    public void merge(String fromBranch, long fromSnapshotId, long toSnapshotId) {}
+
+    public void merge(String fromBranch, List<Long> snapshotLists) {}
+
     @VisibleForTesting
     public Snapshot commitToTargetMaster(
             List<ManifestEntry> appendTableFiles,
