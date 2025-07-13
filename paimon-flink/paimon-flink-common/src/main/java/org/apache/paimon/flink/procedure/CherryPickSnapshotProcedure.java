@@ -41,7 +41,8 @@ public class CherryPickSnapshotProcedure extends ProcedureBase {
     @ProcedureHint(
             argument = {
                 @ArgumentHint(name = "table", type = @DataTypeHint("STRING")),
-                @ArgumentHint(name = "branch", type = @DataTypeHint("STRING")),
+                @ArgumentHint(name = "from_branch", type = @DataTypeHint("STRING")),
+                @ArgumentHint(name = "to_branch", type = @DataTypeHint("STRING")),
                 @ArgumentHint(name = "snapshot", type = @DataTypeHint("Integer")),
                 @ArgumentHint(
                         name = "overwriteOptions",
@@ -51,21 +52,26 @@ public class CherryPickSnapshotProcedure extends ProcedureBase {
     public String[] call(
             ProcedureContext procedureContext,
             String tableId,
-            String branchName,
+            String fromBranchName,
+            String toBranchName,
             Integer snapshot,
             Boolean overwriteOptions)
             throws Catalog.TableNotExistException {
         Identifier identifier = Identifier.fromString(tableId);
-        FileStoreTable mainTable = (FileStoreTable) catalog.getTable(identifier);
-        Snapshot updatedSnapshot =
-                mainTable
+        FileStoreTable toBranchTable = (FileStoreTable) catalog.getTable(identifier);
+        if (!toBranchName.equalsIgnoreCase("main") && !toBranchName.equalsIgnoreCase("master")) {
+            toBranchTable = toBranchTable.switchToBranch(toBranchName);
+        }
+        Snapshot generatedSnapshot =
+                toBranchTable
                         .versionControlOperator()
                         .overwriteOptions(overwriteOptions == null || overwriteOptions)
-                        .cherryPick(branchName, snapshot);
+                        .cherryPick(fromBranchName, snapshot);
         return new String[] {
-            updatedSnapshot == null
-                    ? "Cherry-pick failed"
-                    : "Cherry-pick to snapshotID : " + updatedSnapshot.id()
+            generatedSnapshot == null
+                    ? "Cherry-pick failed."
+                    : "Cherry-pick succeeds and generates a new snapshot in the target branch : "
+                            + generatedSnapshot.id()
         };
     }
 }

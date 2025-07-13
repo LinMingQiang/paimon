@@ -63,22 +63,49 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
     }
 
     @Test
-    public void testCherryPick() throws Exception {
+    public void testCherryPickToMain() throws Exception {
         createBranch(true, getCoreOptions());
-        FileStoreTable mainTable;
         FileStoreTable branchTable = paimonTable("T$branch_test");
         assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(1);
         sql("INSERT INTO `T$branch_test` VALUES " + "(1, 'branch-apple', 'pt')");
         branchTable = paimonTable("T$branch_test");
         assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
 
-        sql("CALL sys.cherry_pick('%s', '%s', %s)", "default.T", "test", 2);
-        mainTable = paimonTable("T");
+        cherryPick("default.T", "test", "main", 2, false);
+        FileStoreTable mainTable = paimonTable("T");
         assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
 
         assertThat(collectResult("SELECT * FROM T"))
                 .containsExactlyInAnyOrder("+I[1, branch-apple, pt]");
     }
+
+    @Test
+    public void testCherryPickToAnotherBranch() throws Exception {
+        createBranch(true, "from_branch", getCoreOptions());
+        assertThat(paimonTable("T").snapshotManager().latestSnapshotId()).isEqualTo(1);
+
+        sql("CALL sys.create_branch('default.T', 'target_branch', 'tag1')");
+
+        FileStoreTable fromBranch = paimonTable("T$branch_from_branch");
+        // 这个记录是为了，让此分支的 pick 的数据 seq num 大于 target_branch 的.
+        sql("INSERT INTO `T$branch_from_branch` VALUES " + "(0, 'ignore', 'pt')");
+        sql("INSERT INTO `T$branch_from_branch` VALUES " + "(1, 'from_branch', 'pt')");
+        assertThat(fromBranch.snapshotManager().latestSnapshotId()).isEqualTo(3);
+
+        FileStoreTable targetBranchTable = paimonTable("T$branch_target_branch");
+        sql("INSERT INTO `T$branch_target_branch` VALUES " + "(1, 'target_branch', 'pt')");
+        assertThat(targetBranchTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
+
+        cherryPick("default.T", "from_branch", "target_branch", 3, false);
+        targetBranchTable = paimonTable("T$branch_target_branch");
+        assertThat(targetBranchTable.snapshotManager().latestSnapshotId()).isEqualTo(3);
+
+        assertThat(collectResult("SELECT * FROM T$branch_target_branch"))
+                .containsExactlyInAnyOrder("+I[1, from_branch, pt]");
+    }
+
+    @Test
+    public void testOverwriteOptions() {}
 
     /** 修改 option 的不可变更参数，在合并时应该失败. */
     @Test
@@ -107,7 +134,7 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
         assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
 
         // 然后 pick 分支数据
-        sql("CALL sys.cherry_pick('%s', '%s', %s)", "default.T", "test", 2);
+        cherryPick("default.T", "test", "main", 2, false);
         mainTable = paimonTable("T");
         assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(3);
 
@@ -153,7 +180,7 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
         assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
 
         // 然后 pick 分支数据
-        sql("CALL sys.cherry_pick('%s', '%s', %s)", "default.T", "test", 2);
+        cherryPick("default.T", "test", "main", 2, false);
         mainTable = paimonTable("T");
         assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(3);
 
@@ -182,7 +209,7 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
 
         sql("INSERT INTO T VALUES" + " (1, 'main-apple', 'pt')");
 
-        sql("CALL sys.cherry_pick('%s', '%s', %s)", "default.T", "test", 2);
+        cherryPick("default.T", "test", "main", 2, false);
         mainTable = paimonTable("T");
         assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(3);
         assertThat(mainTable.schema().fields().size()).isEqualTo(4);
@@ -220,7 +247,7 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
         // main branch : snp-1,snp-2 (new col main_col)
         // test branch : snp-1,snp-2 (new col branch_col)
 
-        sql("CALL sys.cherry_pick('%s', '%s', %s)", "default.T", "test", 2);
+        cherryPick("default.T", "test", "main", 2, false);
         mainTable = paimonTable("T");
         assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(3);
         assertThat(mainTable.schema().fields().size()).isEqualTo(5);
@@ -239,7 +266,7 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
         sql("INSERT INTO `T$branch_test` VALUES(1, 'branch-apple', 'pt', 'conflict_col_value')");
 
         // 因为可以隐式转换，所以，conflict_col 为 string 类型.
-        sql("CALL sys.cherry_pick('%s', '%s', %s)", "default.T", "test", 2);
+        cherryPick("default.T", "test", "main", 2, false);
         mainTable = paimonTable("T");
         assertThat(mainTable.schema().fields().size()).isEqualTo(4);
         assertThat(mainTable.schema().toSchema().rowType().getField("conflict_col").type())
@@ -250,8 +277,7 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
         sql("ALTER TABLE `T$branch_test` ADD (conflict_col2 INT)");
         sql("INSERT INTO `T$branch_test` VALUES(1, 'branch-apple', 'pt', 'conflict_col_value', 1)");
 
-        assertThatThrownBy(
-                        () -> sql("CALL sys.cherry_pick('%s', '%s', %s)", "default.T", "test", 3))
+        assertThatThrownBy(() -> cherryPick("default.T", "test", "main", 3, false))
                 .satisfies(
                         anyCauseMatches(
                                 UnsupportedOperationException.class,
@@ -268,7 +294,7 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
         branchTable = paimonTable("T$branch_test");
         assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
 
-        sql("CALL sys.cherry_pick('%s', '%s', %s)", "default.T", "test", 2);
+        cherryPick("default.T", "test", "main", 2, false);
         mainTable = paimonTable("T");
         assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
 
@@ -298,21 +324,13 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
                 Snapshot latestSnapshot = branchTable.snapshotManager().latestSnapshot();
                 assertThat(latestSnapshot.id()).isEqualTo(3);
                 assertThat(latestSnapshot.commitKind()).isEqualTo(Snapshot.CommitKind.COMPACT);
-                assertThatThrownBy(
-                                () ->
-                                        sql(
-                                                "CALL sys.cherry_pick('%s', '%s', %s)",
-                                                "default.T", "test", 3))
+                assertThatThrownBy(() -> cherryPick("default.T", "test", "main", 3, false))
                         .satisfies(
                                 anyCauseMatches(
                                         IllegalArgumentException.class,
                                         "Cherry-pick is only supported in APPEND commitKind snapshot."));
             } else {
-                assertThatThrownBy(
-                                () ->
-                                        sql(
-                                                "CALL sys.cherry_pick('%s', '%s', %s)",
-                                                "default.T", "test", 2))
+                assertThatThrownBy(() -> cherryPick("default.T", "test", "main", 2, false))
                         .satisfies(
                                 anyCauseMatches(
                                         IllegalArgumentException.class,
@@ -321,11 +339,7 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
 
         } else {
             // Do not support dynamic bucket table.
-            assertThatThrownBy(
-                            () ->
-                                    sql(
-                                            "CALL sys.cherry_pick('%s', '%s', %s)",
-                                            "default.T", "test", 2))
+            assertThatThrownBy(() -> cherryPick("default.T", "test", "main", 2, false))
                     .satisfies(
                             anyCauseMatches(
                                     IllegalArgumentException.class,
@@ -346,7 +360,7 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
         branchTable = paimonTable("T$branch_test");
         assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
 
-        sql("CALL sys.cherry_pick('%s', '%s', %s)", "default.T", "test", 2);
+        cherryPick("default.T", "test", "main", 2, false);
         mainTable = paimonTable("T");
         assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
 
@@ -377,7 +391,7 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
                         .collect(Collectors.toList());
         assertThat(branchDataIndexFiles.size()).isEqualTo(2);
 
-        sql("CALL sys.cherry_pick('%s', '%s', %s)", "default.T", "test", 2);
+        cherryPick("default.T", "test", "main", 2, false);
 
         mainTable = paimonTable("T");
         assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
@@ -388,6 +402,10 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
     }
 
     public void createBranch(boolean primaryTable, Map<String, String> options) {
+        createBranch(primaryTable, "test", options);
+    }
+
+    public void createBranch(boolean primaryTable, String branchName, Map<String, String> options) {
         StringBuilder sb = new StringBuilder();
         options.forEach((k, v) -> sb.append(String.format(",'%s'='%s'", k, v)));
         sql(
@@ -405,7 +423,22 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
         sql("INSERT INTO T VALUES" + " (1, 'apple', 'pt')");
 
         sql("CALL sys.create_tag('default.T', 'tag1', 1)");
-        sql("CALL sys.create_branch('default.T', 'test', 'tag1')");
+        sql("CALL sys.create_branch('default.T', '%s', 'tag1')", branchName);
+    }
+
+    private void cherryPick(
+            String tableId,
+            String fromBranchName,
+            String toBranchName,
+            Integer snapshot,
+            Boolean overwriteOptions) {
+        sql(
+                "CALL sys.cherry_pick(`table` => '%s',"
+                        + "`from_branch` =>'%s', "
+                        + "`to_branch` =>'%s', "
+                        + "`snapshot` => %s,"
+                        + "`overwriteOptions` => %s)",
+                tableId, fromBranchName, toBranchName, snapshot, overwriteOptions);
     }
 
     private List<String> collectResult(String sql) throws Exception {
