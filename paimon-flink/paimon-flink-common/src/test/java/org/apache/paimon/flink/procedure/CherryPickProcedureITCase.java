@@ -107,6 +107,21 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
     }
 
     @Test
+    public void testCherryPickSnapshotIdNotExist() throws Exception {
+        createBranch(true, getCoreOptions());
+        FileStoreTable branchTable = paimonTable("T$branch_test");
+        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(1);
+        sql("INSERT INTO `T$branch_test` VALUES " + "(1, 'branch-apple', 'pt')");
+        branchTable = paimonTable("T$branch_test");
+        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
+
+        assertThatThrownBy(() -> cherryPick("default.T", "test", "main", 3, false))
+                .satisfies(
+                        anyCauseMatches(
+                                RuntimeException.class, "Cherry-pick snapshot id 3 not found."));
+    }
+
+    @Test
     public void testCherryPickToAnotherBranch() throws Exception {
         createBranch(true, "from_branch", getCoreOptions());
         assertThat(paimonTable("T").snapshotManager().latestSnapshotId()).isEqualTo(1);

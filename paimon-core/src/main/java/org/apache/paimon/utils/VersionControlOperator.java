@@ -53,11 +53,15 @@ public class VersionControlOperator {
     /** Cherry-pick snapshot from branch to current branch. */
     public Snapshot cherryPick(String fromBranch, long snapshotId) {
         FileStoreTable branchTable = masterTable.switchToBranch(fromBranch);
+        Preconditions.checkArgument(
+                branchTable.snapshotManager().snapshotExists(snapshotId),
+                "Cherry-pick snapshot id %s not found.",
+                snapshotId);
+
         Snapshot cherryPickSnapshot = branchTable.snapshot(snapshotId);
 
         Preconditions.checkArgument(
-                cherryPickSnapshot != null
-                        && cherryPickSnapshot.commitKind() == Snapshot.CommitKind.APPEND,
+                cherryPickSnapshot.commitKind() == Snapshot.CommitKind.APPEND,
                 "Cherry-pick is only supported in APPEND commitKind snapshot.");
 
         Preconditions.checkArgument(
