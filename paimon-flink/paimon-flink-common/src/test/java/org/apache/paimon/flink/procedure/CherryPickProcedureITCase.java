@@ -63,6 +63,33 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
     }
 
     @Test
+    public void testCreateBranchFromOtherBranch() throws Exception {
+        createBranch(true, getCoreOptions());
+        FileStoreTable branchTable = paimonTable("T$branch_test");
+        sql("INSERT INTO `T$branch_test` VALUES " + "(1, 'branch-apple', 'pt')");
+        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
+        sql("CALL sys.create_tag('default.T$branch_test', 'test_tag', 2)");
+
+        String checkOutFromOtherBranch = "checkout_from_test_branch";
+        sql(
+                "CALL sys.create_branch('default.T$branch_test', '%s', 'test_tag')",
+                checkOutFromOtherBranch);
+        // The data is branch test data.
+        assertThat(collectResult("SELECT * FROM `T$branch_checkout_from_test_branch`"))
+                .containsExactlyInAnyOrder("+I[1, branch-apple, pt]");
+
+        // insert to another branch.
+        sql(
+                "INSERT INTO `T$branch_checkout_from_test_branch` VALUES "
+                        + "(1, 'checkout_from_test_branch', 'pt')");
+        FileStoreTable anotherBranchTable = paimonTable("T$branch_checkout_from_test_branch");
+        assertThat(anotherBranchTable.snapshotManager().latestSnapshotId()).isEqualTo(3);
+
+        assertThat(collectResult("SELECT * FROM `T$branch_checkout_from_test_branch`"))
+                .containsExactlyInAnyOrder("+I[1, checkout_from_test_branch, pt]");
+    }
+
+    @Test
     public void testCherryPickToMain() throws Exception {
         createBranch(true, getCoreOptions());
         FileStoreTable branchTable = paimonTable("T$branch_test");
