@@ -33,6 +33,7 @@ import org.apache.paimon.table.FileStoreTable;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -148,6 +149,7 @@ public class VersionControlOperator {
                 baseSnapshot.commitIdentifier(),
                 baseSnapshot.watermark(),
                 baseSnapshot.logOffsets(),
+                baseSnapshot.properties() == null ? new HashMap<>() : baseSnapshot.properties(),
                 false);
 
         fileStoreCommit.close();

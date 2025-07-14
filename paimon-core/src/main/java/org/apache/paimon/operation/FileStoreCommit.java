@@ -57,6 +57,7 @@ public interface FileStoreCommit extends AutoCloseable {
             long identifier,
             @Nullable Long watermark,
             Map<Integer, Long> logOffsets,
+            Map<String, String> properties,
             boolean checkAppendFiles);
 
     /**

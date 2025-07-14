@@ -20,6 +20,10 @@ package org.apache.paimon.flink.procedure;
 
 import org.apache.paimon.Snapshot;
 import org.apache.paimon.flink.CatalogITCaseBase;
+import org.apache.paimon.manifest.ManifestEntry;
+import org.apache.paimon.manifest.ManifestFile;
+import org.apache.paimon.manifest.ManifestFileMeta;
+import org.apache.paimon.manifest.ManifestList;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.source.DataSplit;
 import org.apache.paimon.types.DataTypes;
@@ -336,12 +340,36 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
         branchTable = paimonTable("T$branch_test");
         assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
 
+        List<ManifestEntry> appendChangelog = new ArrayList<>();
+        ManifestFile manifestFileReader = branchTable.store().manifestFileFactory().create();
+        ManifestList manifestListReader = branchTable.store().manifestListFactory().create();
+
+        // Read append change-log data files.
+        readAndUpdateManifestEntry(
+                manifestFileReader,
+                manifestListReader.readChangelogManifests(
+                        branchTable.snapshotManager().latestSnapshot()),
+                appendChangelog);
+
         cherryPick("default.T", "test", "main", 2, false);
         mainTable = paimonTable("T");
         assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
 
-        assertThat(collectResult("SELECT * FROM T"))
-                .containsExactlyInAnyOrder("+I[1, branch-apple, pt]");
+        List<ManifestEntry> mainAppendChangelog = new ArrayList<>();
+        ManifestFile mainManifestFileReader = mainTable.store().manifestFileFactory().create();
+        ManifestList mainManifestListReader = mainTable.store().manifestListFactory().create();
+
+        // Read append change-log data files.
+        readAndUpdateManifestEntry(
+                mainManifestFileReader,
+                mainManifestListReader.readChangelogManifests(
+                        mainTable.snapshotManager().latestSnapshot()),
+                mainAppendChangelog);
+
+        assertThat(mainAppendChangelog.size()).isEqualTo(1);
+
+        assertThat(mainAppendChangelog)
+                .containsExactlyInAnyOrder(appendChangelog.toArray(new ManifestEntry[0]));
     }
 
     @ParameterizedTest
@@ -491,5 +519,17 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
             }
         }
         return result;
+    }
+
+    /** Read ManifestEntry from ManifestFile and update schemaId if necessary. */
+    private void readAndUpdateManifestEntry(
+            ManifestFile manifestFileReader,
+            List<ManifestFileMeta> manifestFileMetas,
+            List<ManifestEntry> manifestEntryList) {
+        for (ManifestFileMeta manifestFileMeta : manifestFileMetas) {
+            List<ManifestEntry> manifestEntries =
+                    manifestFileReader.read(manifestFileMeta.fileName());
+            manifestEntryList.addAll(manifestEntries);
+        }
     }
 }

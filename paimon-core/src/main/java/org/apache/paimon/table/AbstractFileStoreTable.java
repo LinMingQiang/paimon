@@ -670,38 +670,6 @@ abstract class AbstractFileStoreTable implements FileStoreTable {
     }
 
     @Override
-    public void rollbackTo(String tagName) {
-        SnapshotManager snapshotManager = snapshotManager();
-        try {
-            snapshotManager.rollback(Instant.tag(tagName));
-            return;
-        } catch (UnsupportedOperationException ignore) {
-
-        }
-        TagManager tagManager = tagManager();
-        checkArgument(tagManager.tagExists(tagName), "Rollback tag '%s' doesn't exist.", tagName);
-
-        Snapshot taggedSnapshot = tagManager.getOrThrow(tagName).trimToSnapshot();
-        rollbackHelper().updateLatestAndCleanLargerThan(taggedSnapshot);
-
-        try {
-            // it is possible that the earliest snapshot is later than the rollback tag because of
-            // snapshot expiration, in this case the `cleanLargerThan` method will delete all
-            // snapshots, so we should write the tag file to snapshot directory and modify the
-            // earliest hint
-            if (!snapshotManager.snapshotExists(taggedSnapshot.id())) {
-                fileIO.writeFile(
-                        snapshotManager().snapshotPath(taggedSnapshot.id()),
-                        fileIO.readFileUtf8(tagManager.tagPath(tagName)),
-                        false);
-                snapshotManager.commitEarliestHint(taggedSnapshot.id());
-            }
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-    }
-
-    @Override
     public TagManager tagManager() {
         return new TagManager(fileIO, path, currentBranch(), coreOptions());
     }
