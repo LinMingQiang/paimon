@@ -111,6 +111,24 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
     }
 
     @Test
+    public void testCherryPickMultiPartitions() throws Exception {
+        createBranch(true, getCoreOptions());
+        FileStoreTable branchTable = paimonTable("T$branch_test");
+        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(1);
+        sql("INSERT INTO `T$branch_test` VALUES " + "(1, 'updated-by-branch', 'pt'),(2, 'branch_data', 'pt2')");
+        branchTable = paimonTable("T$branch_test");
+        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
+
+        cherryPick("default.T", "test", "main", 2, false);
+        FileStoreTable mainTable = paimonTable("T");
+        assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
+
+        assertThat(collectResult("SELECT * FROM T"))
+                .containsExactlyInAnyOrder("+I[1, updated-by-branch, pt]",
+                        "+I[2, branch_data, pt2]");
+    }
+
+    @Test
     public void testCherryPickSnapshotIdNotExist() throws Exception {
         createBranch(true, getCoreOptions());
         FileStoreTable branchTable = paimonTable("T$branch_test");
