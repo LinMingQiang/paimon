@@ -20,7 +20,11 @@ package org.apache.paimon.utils;
 
 import org.apache.paimon.Snapshot;
 import org.apache.paimon.annotation.VisibleForTesting;
-import org.apache.paimon.manifest.IndexManifestEntry;
+import org.apache.paimon.data.BinaryRow;
+import org.apache.paimon.io.CompactIncrement;
+import org.apache.paimon.io.DataIncrement;
+import org.apache.paimon.io.IndexIncrement;
+import org.apache.paimon.manifest.ManifestCommittable;
 import org.apache.paimon.manifest.ManifestEntry;
 import org.apache.paimon.manifest.ManifestFile;
 import org.apache.paimon.manifest.ManifestFileMeta;
@@ -30,15 +34,19 @@ import org.apache.paimon.schema.TableSchema;
 import org.apache.paimon.table.BucketMode;
 import org.apache.paimon.table.CatalogEnvironment;
 import org.apache.paimon.table.FileStoreTable;
+import org.apache.paimon.table.sink.CommitMessageImpl;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-/** Version control operator. */
+/**
+ * Version control operator.
+ */
 public class VersionControlOperator {
     protected final FileStoreTable masterTable;
     protected final CatalogEnvironment catalogEnvironment;
@@ -51,15 +59,17 @@ public class VersionControlOperator {
         this.masterTable = masterTable;
     }
 
-    /** Cherry-pick snapshot from branch to current branch. */
+    /**
+     * Cherry-pick snapshot from branch to current branch.
+     */
     public Snapshot cherryPick(String fromBranch, long snapshotId) {
-        FileStoreTable branchTable = masterTable.switchToBranch(fromBranch);
+        FileStoreTable fromTable = masterTable.switchToBranch(fromBranch);
         Preconditions.checkArgument(
-                branchTable.snapshotManager().snapshotExists(snapshotId),
+                fromTable.snapshotManager().snapshotExists(snapshotId),
                 "Cherry-pick snapshot id %s not found.",
                 snapshotId);
 
-        Snapshot cherryPickSnapshot = branchTable.snapshot(snapshotId);
+        Snapshot cherryPickSnapshot = fromTable.snapshot(snapshotId);
 
         Preconditions.checkArgument(
                 cherryPickSnapshot.commitKind() == Snapshot.CommitKind.APPEND,
@@ -74,90 +84,41 @@ public class VersionControlOperator {
                 !masterTable.coreOptions().needLookup(), "Cherry-pick do not support lookup mode.");
 
         Optional<Snapshot> oldSnapshot = masterTable.latestSnapshot();
-        TableSchema baseSchema = masterTable.schemaManager().latest().get();
-
-        TableSchema pickSchema = branchTable.schemaManager().schema(cherryPickSnapshot.schemaId());
-        TableSchema updatedSchema = null;
-        Snapshot updatedSnapshot;
+        TableSchema targetBaseSchema = masterTable.schemaManager().latest().get();
+        TableSchema resultSchema = null;
+        Snapshot resultSnapshot;
         try {
 
             // TODO : 需要增加一个检测，当前 cherry pick 的 file 是否已经存在在 main 了, 也就是一个 数据被 cp 了多次.
+            List<Snapshot> cherryPickSnapshotList = Collections.singletonList(cherryPickSnapshot);
+            List<TableSchema> cherryPickSchemas = cherryPickSnapshotList.stream().map(snapshot -> fromTable.schemaManager().schema(snapshot.schemaId())).collect(Collectors.toList());
+            resultSchema = mergeMultiSchema(targetBaseSchema, cherryPickSchemas);
 
-            updatedSchema = mergeSchemaAndCommit(baseSchema, pickSchema);
-
-            ManifestList manifestListReader = branchTable.store().manifestListFactory().create();
-            ManifestFile manifestFileReader = branchTable.store().manifestFileFactory().create();
-
-            List<ManifestEntry> appendTableFiles = new ArrayList<>();
-            List<ManifestEntry> appendChangelog = new ArrayList<>();
-
-            // Read append data files.
-            readAndUpdateManifestEntry(
-                    manifestFileReader,
-                    manifestListReader.readDeltaManifests(cherryPickSnapshot),
-                    appendTableFiles,
-                    updatedSchema);
-
-            // Read append change-log data files.
-            readAndUpdateManifestEntry(
-                    manifestFileReader,
-                    manifestListReader.readChangelogManifests(cherryPickSnapshot),
-                    appendChangelog,
-                    updatedSchema);
-
-            updatedSnapshot =
-                    commitToTargetMaster(
-                            appendTableFiles,
-                            appendChangelog,
-                            Collections.emptyList(),
-                            Collections.emptyList(),
-                            Collections.emptyList(),
-                            Collections.emptyList(),
-                            cherryPickSnapshot);
+            ManifestCommittable manifestCommittable = createManifestCommittable(fromTable, resultSchema, cherryPickSnapshotList);
+            FileStoreCommitImpl fileStoreCommit =
+                    (FileStoreCommitImpl)
+                            masterTable.store().newCommit(cherryPickSnapshot.commitUser(), masterTable);
+            fileStoreCommit.commit(manifestCommittable, false);
+            fileStoreCommit.close();
+            resultSnapshot = masterTable.store().snapshotManager().latestSnapshot();
 
         } catch (Throwable e) {
-            fallBackCherryPick(updatedSchema, oldSnapshot.orElse(null));
-            throw new RuntimeException("cherryPick failed.", e);
+            fallBackCherryPick(resultSchema, oldSnapshot.orElse(null));
+            throw new RuntimeException("Cherry-Pick failed.", e);
         }
-        return updatedSnapshot;
+        return resultSnapshot;
     }
 
-    public void merge(String fromBranch, long fromSnapshotId, long toSnapshotId) {}
+    public void merge(String fromBranch, long fromSnapshotId, long toSnapshotId) {
 
-    public void merge(String fromBranch, List<Long> snapshotLists) {}
+    }
 
-    @VisibleForTesting
-    public Snapshot commitToTargetMaster(
-            List<ManifestEntry> appendTableFiles,
-            List<ManifestEntry> appendChangelog,
-            List<ManifestEntry> compactTableFiles,
-            List<ManifestEntry> compactChangelog,
-            List<IndexManifestEntry> appendHashIndexFiles,
-            List<IndexManifestEntry> compactDvIndexFiles,
-            Snapshot baseSnapshot) {
+    public void merge(String fromBranch, List<Long> snapshotLists) {
 
-        FileStoreCommitImpl fileStoreCommit =
-                (FileStoreCommitImpl)
-                        masterTable.store().newCommit(baseSnapshot.commitUser(), masterTable);
-        fileStoreCommit.commit(
-                appendTableFiles,
-                appendChangelog,
-                compactTableFiles,
-                compactChangelog,
-                appendHashIndexFiles,
-                compactDvIndexFiles,
-                baseSnapshot.commitIdentifier(),
-                baseSnapshot.watermark(),
-                baseSnapshot.logOffsets(),
-                baseSnapshot.properties() == null ? new HashMap<>() : baseSnapshot.properties(),
-                false);
-
-        fileStoreCommit.close();
-        return masterTable.store().snapshotManager().latestSnapshot();
     }
 
     @VisibleForTesting
-    public TableSchema mergeSchemaAndCommit(TableSchema oldSchema, TableSchema branchSchema)
+    public TableSchema mergeSchema(TableSchema oldSchema, TableSchema branchSchema)
             throws Exception {
         TableSchema updatedSchema = null;
         Optional<TableSchema> mergedSchema =
@@ -172,6 +133,16 @@ public class VersionControlOperator {
                     updatedSchema.id() - 1 == oldSchema.id(), "schema id has been changed.");
         }
         return updatedSchema;
+    }
+
+    @VisibleForTesting
+    public TableSchema mergeMultiSchema(TableSchema oldSchema, List<TableSchema> branchSchemas)
+            throws Exception {
+        TableSchema mergedSchema = oldSchema;
+        for (TableSchema branchSchema : branchSchemas) {
+            mergedSchema = mergeSchema(mergedSchema, branchSchema);
+        }
+        return mergedSchema;
     }
 
     @VisibleForTesting
@@ -193,7 +164,9 @@ public class VersionControlOperator {
         return this;
     }
 
-    /** Read ManifestEntry from ManifestFile and update schemaId if necessary. */
+    /**
+     * Read ManifestEntry from ManifestFile and update schemaId if necessary.
+     */
     private void readAndUpdateManifestEntry(
             ManifestFile manifestFileReader,
             List<ManifestFileMeta> manifestFileMetas,
@@ -214,5 +187,87 @@ public class VersionControlOperator {
             }
             manifestEntryList.addAll(manifestEntries);
         }
+    }
+
+    private ManifestCommittable createManifestCommittable(
+            FileStoreTable fromTable,
+            TableSchema updatedSchema,
+            List<Snapshot> cherryPickSnapshotList) throws Exception {
+
+        long commitIdentifier = cherryPickSnapshotList.get(0).commitIdentifier();
+        Long watermark = null;
+        List<ManifestEntry> appendTableFiles = new ArrayList<>();
+        List<ManifestEntry> appendChangelog = new ArrayList<>();
+        ManifestList manifestListReader = fromTable.store().manifestListFactory().create();
+        ManifestFile manifestFileReader = fromTable.store().manifestFileFactory().create();
+        Map<String, String> properties = new HashMap<>();
+
+        for (Snapshot cherryPickSnapshot : cherryPickSnapshotList) {
+            commitIdentifier = cherryPickSnapshot.commitIdentifier() > commitIdentifier ? commitIdentifier : cherryPickSnapshot.commitIdentifier();
+            if (watermark == null || (cherryPickSnapshot.watermark() != null && cherryPickSnapshot.watermark() > watermark)) {
+                watermark = cherryPickSnapshot.watermark();
+            }
+            // Read append data files.
+            readAndUpdateManifestEntry(
+                    manifestFileReader,
+                    manifestListReader.readDeltaManifests(cherryPickSnapshot),
+                    appendTableFiles,
+                    updatedSchema);
+
+            // Read append change-log data files.
+            readAndUpdateManifestEntry(
+                    manifestFileReader,
+                    manifestListReader.readChangelogManifests(cherryPickSnapshot),
+                    appendChangelog,
+                    updatedSchema);
+            if (cherryPickSnapshot.properties() != null) {
+                properties.putAll(cherryPickSnapshot.properties());
+            }
+        }
+
+        ManifestCommittable manifestCommittable = new ManifestCommittable(
+                commitIdentifier,
+                watermark);
+        properties.forEach(manifestCommittable::addProperty);
+
+       Map<Pair<BinaryRow, Integer>, List<ManifestEntry>> appendDataFiles = appendTableFiles.stream().collect(Collectors.groupingBy(x -> Pair.of(x.partition(), x.bucket())));
+       Map<Pair<BinaryRow, Integer>, List<ManifestEntry>> changelogDataFiles = appendChangelog.stream().collect(Collectors.groupingBy(x -> Pair.of(x.partition(), x.bucket())));
+
+        appendDataFiles.forEach((k, v) -> {
+            DataIncrement dataIncrement = new DataIncrement(
+                    v.stream().map(ManifestEntry::file).collect(Collectors.toList()),
+                    Collections.emptyList(),
+                    Collections.emptyList()
+                    );
+            CommitMessageImpl commitMessage = new CommitMessageImpl(
+                    k.getKey(),
+                    k.getValue(),
+                    null,
+                    dataIncrement,
+                    CompactIncrement.emptyIncrement(),
+                    IndexIncrement.emptyIncrement()
+            );
+            manifestCommittable.addFileCommittable(commitMessage);
+        });
+
+        changelogDataFiles.forEach((k, v) -> {
+            DataIncrement dataIncrement = new DataIncrement(
+                    Collections.emptyList(),
+                    Collections.emptyList(),
+                    v.stream().map(ManifestEntry::file).collect(Collectors.toList())
+            );
+            CommitMessageImpl commitMessage = new CommitMessageImpl(
+                    k.getKey(),
+                    k.getValue(),
+                    null,
+                    dataIncrement,
+                    CompactIncrement.emptyIncrement(),
+                    IndexIncrement.emptyIncrement()
+            );
+            manifestCommittable.addFileCommittable(commitMessage);
+        });
+
+        return manifestCommittable;
+
     }
 }

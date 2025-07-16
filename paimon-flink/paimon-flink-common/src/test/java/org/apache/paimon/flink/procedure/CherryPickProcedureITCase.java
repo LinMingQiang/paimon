@@ -115,7 +115,9 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
         createBranch(true, getCoreOptions());
         FileStoreTable branchTable = paimonTable("T$branch_test");
         assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(1);
-        sql("INSERT INTO `T$branch_test` VALUES " + "(1, 'updated-by-branch', 'pt'),(2, 'branch_data', 'pt2')");
+        sql(
+                "INSERT INTO `T$branch_test` VALUES "
+                        + "(1, 'updated-by-branch', 'pt'),(2, 'branch_data', 'pt2')");
         branchTable = paimonTable("T$branch_test");
         assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
 
@@ -124,8 +126,8 @@ public class CherryPickProcedureITCase extends CatalogITCaseBase {
         assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
 
         assertThat(collectResult("SELECT * FROM T"))
-                .containsExactlyInAnyOrder("+I[1, updated-by-branch, pt]",
-                        "+I[2, branch_data, pt2]");
+                .containsExactlyInAnyOrder(
+                        "+I[1, updated-by-branch, pt]", "+I[2, branch_data, pt2]");
     }
 
     @Test

@@ -20,15 +20,11 @@ package org.apache.paimon.operation;
 
 import org.apache.paimon.Snapshot;
 import org.apache.paimon.fs.FileIO;
-import org.apache.paimon.manifest.IndexManifestEntry;
 import org.apache.paimon.manifest.ManifestCommittable;
-import org.apache.paimon.manifest.ManifestEntry;
 import org.apache.paimon.operation.metrics.CommitMetrics;
 import org.apache.paimon.stats.Statistics;
 import org.apache.paimon.table.sink.CommitMessage;
 import org.apache.paimon.utils.FileStorePathFactory;
-
-import javax.annotation.Nullable;
 
 import java.util.List;
 import java.util.Map;
@@ -45,20 +41,6 @@ public interface FileStoreCommit extends AutoCloseable {
 
     /** Commit from manifest committable with checkAppendFiles. */
     void commit(ManifestCommittable committable, boolean checkAppendFiles);
-
-    /** Commit from files. */
-    void commit(
-            List<ManifestEntry> appendTableFiles,
-            List<ManifestEntry> appendChangelog,
-            List<ManifestEntry> compactTableFiles,
-            List<ManifestEntry> compactChangelog,
-            List<IndexManifestEntry> appendHashIndexFiles,
-            List<IndexManifestEntry> compactDvIndexFiles,
-            long identifier,
-            @Nullable Long watermark,
-            Map<Integer, Long> logOffsets,
-            Map<String, String> properties,
-            boolean checkAppendFiles);
 
     /**
      * Overwrite from manifest committable and partition.
