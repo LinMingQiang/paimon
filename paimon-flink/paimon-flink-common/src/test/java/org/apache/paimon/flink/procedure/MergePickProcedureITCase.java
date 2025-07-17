@@ -19,9 +19,6 @@
 package org.apache.paimon.flink.procedure;
 
 import org.apache.paimon.flink.CatalogITCaseBase;
-import org.apache.paimon.manifest.ManifestEntry;
-import org.apache.paimon.manifest.ManifestFile;
-import org.apache.paimon.manifest.ManifestFileMeta;
 import org.apache.paimon.table.FileStoreTable;
 
 import org.apache.flink.types.Row;
@@ -75,6 +72,49 @@ public class MergePickProcedureITCase extends CatalogITCaseBase {
                 .containsExactlyInAnyOrder("+I[1, branch-apple, pt]", "+I[2, branch2-apple2, pt]");
     }
 
+    @Test
+    public void testMergePickUseRangePick() throws Exception {
+        createBranch(true, getCoreOptions());
+        FileStoreTable branchTable = paimonTable("T$branch_test");
+        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(1);
+        sql("INSERT INTO `T$branch_test` VALUES " + "(1, 'branch-apple', 'pt')");
+        sql("INSERT INTO `T$branch_test` VALUES " + "(2, 'branch2-apple2', 'pt')");
+        branchTable = paimonTable("T$branch_test");
+        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(3);
+
+        // pick snapshot 2.
+        mergePick("default.T", "test", "main", 2, 3, false);
+        FileStoreTable mainTable = paimonTable("T");
+        assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
+
+        assertThat(collectResult("SELECT * FROM T"))
+                .containsExactlyInAnyOrder("+I[1, branch-apple, pt]", "+I[2, branch2-apple2, pt]");
+    }
+
+    @Test
+    public void testMergePickMergeSchemas() throws Exception {
+        createBranch(true, getCoreOptions());
+
+        FileStoreTable branchTable = paimonTable("T$branch_test");
+        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(1);
+        sql("ALTER TABLE `T$branch_test` ADD (v2 STRING)");
+        sql("INSERT INTO `T$branch_test` VALUES(1, 'branch-apple', 'pt', 'v2')");
+
+        sql("ALTER TABLE `T$branch_test` ADD (v3 STRING)");
+        sql("INSERT INTO `T$branch_test` VALUES(2, 'branch2-apple2', 'pt', 'v2', 'v3')");
+        branchTable = paimonTable("T$branch_test");
+        assertThat(branchTable.snapshotManager().latestSnapshotId()).isEqualTo(3);
+
+        // pick snapshot 2.
+        mergePick("default.T", "test", "main", "2,3", false);
+        FileStoreTable mainTable = paimonTable("T");
+        assertThat(mainTable.snapshotManager().latestSnapshotId()).isEqualTo(2);
+
+        assertThat(collectResult("SELECT * FROM T"))
+                .containsExactlyInAnyOrder(
+                        "+I[1, branch-apple, pt, v2, null]", "+I[2, branch2-apple2, pt, v2, v3]");
+    }
+
     public void createBranch(boolean primaryTable, Map<String, String> options) {
         createBranch(primaryTable, "test", options);
     }
@@ -115,19 +155,21 @@ public class MergePickProcedureITCase extends CatalogITCaseBase {
                 tableId, fromBranchName, toBranchName, snapshotList, overwriteOptions);
     }
 
-    private void cherryPick(
+    private void mergePick(
             String tableId,
             String fromBranchName,
             String toBranchName,
-            Integer snapshot,
+            int fromSnapshot,
+            int toSnapshot,
             Boolean overwriteOptions) {
         sql(
-                "CALL sys.cherry_pick(`table` => '%s',"
+                "CALL sys.merge_pick(`table` => '%s',"
                         + "`from_branch` =>'%s', "
                         + "`to_branch` =>'%s', "
-                        + "`snapshot` => %s,"
+                        + "`from_snapshot` => %s,"
+                        + "`to_snapshot` => %s,"
                         + "`overwriteOptions` => %s)",
-                tableId, fromBranchName, toBranchName, snapshot, overwriteOptions);
+                tableId, fromBranchName, toBranchName, fromSnapshot, toSnapshot, overwriteOptions);
     }
 
     private List<String> collectResult(String sql) throws Exception {
@@ -138,17 +180,5 @@ public class MergePickProcedureITCase extends CatalogITCaseBase {
             }
         }
         return result;
-    }
-
-    /** Read ManifestEntry from ManifestFile and update schemaId if necessary. */
-    private void readAndUpdateManifestEntry(
-            ManifestFile manifestFileReader,
-            List<ManifestFileMeta> manifestFileMetas,
-            List<ManifestEntry> manifestEntryList) {
-        for (ManifestFileMeta manifestFileMeta : manifestFileMetas) {
-            List<ManifestEntry> manifestEntries =
-                    manifestFileReader.read(manifestFileMeta.fileName());
-            manifestEntryList.addAll(manifestEntries);
-        }
     }
 }
