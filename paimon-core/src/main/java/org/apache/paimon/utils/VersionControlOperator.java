@@ -47,25 +47,25 @@ import java.util.stream.Collectors;
 
 /** Version control operator. */
 public class VersionControlOperator {
-    protected final FileStoreTable masterTable;
+    protected final FileStoreTable targetTable;
     protected final CatalogEnvironment catalogEnvironment;
 
     protected boolean overwriteOptions;
 
     public VersionControlOperator(
-            FileStoreTable masterTable, CatalogEnvironment catalogEnvironment) {
+            FileStoreTable targetTable, CatalogEnvironment catalogEnvironment) {
         this.catalogEnvironment = catalogEnvironment;
-        this.masterTable = masterTable;
+        this.targetTable = targetTable;
     }
 
     /** Cherry-pick snapshot from branch to current branch. */
     public Snapshot cherryPick(String fromBranch, long snapshotId) {
-        FileStoreTable fromTable = getBranchFileStoreTable(fromBranch);
+        FileStoreTable fromTable = targetTable.switchToBranch(fromBranch);
 
-        checkApplicability();
+        validateForCherryPick();
 
-        Snapshot currentSnapshot = masterTable.snapshotManager().latestSnapshot();
-        TableSchema currentSchema = masterTable.schemaManager().latest().get();
+        Snapshot currentSnapshot = targetTable.snapshotManager().latestSnapshot();
+        TableSchema currentSchema = targetTable.schemaManager().latest().orElse(null);
 
         TableSchema appeliedSchema = null;
         Snapshot appeliedSnapshot;
@@ -77,32 +77,41 @@ public class VersionControlOperator {
 
             appeliedSchema = mergeSchema(currentSchema, fromTable.schema());
 
+            if (appeliedSchema != null) {
+                targetTable.schemaManager().commit(appeliedSchema);
+            }
+
             FileStoreCommitImpl fileStoreCommit =
-                    (FileStoreCommitImpl) masterTable.store().newCommit(commitUser, masterTable);
+                    (FileStoreCommitImpl) targetTable.store().newCommit(commitUser, targetTable);
             fileStoreCommit.commit(
                     createManifestCommittable(fromTable, appeliedSchema, cherryPickSnapshot),
                     false);
             fileStoreCommit.close();
-            appeliedSnapshot = masterTable.store().snapshotManager().latestSnapshot();
+            appeliedSnapshot = targetTable.store().snapshotManager().latestSnapshot();
 
         } catch (Throwable e) {
             fallBackCherryPick(appeliedSchema, currentSnapshot);
-            throw new RuntimeException("cherryPick failed.", e);
+            throw new RuntimeException("Cherry-pick is failed.", e);
         }
+
         return appeliedSnapshot;
     }
 
     @VisibleForTesting
     public TableSchema mergeSchema(TableSchema oldSchema, TableSchema branchSchema)
             throws Exception {
+
+        if (oldSchema == null) {
+            return branchSchema;
+        }
+
         TableSchema updatedSchema = null;
         Optional<TableSchema> mergedSchema =
-                masterTable
+                targetTable
                         .schemaManager()
                         .mergeSchema(oldSchema, branchSchema, overwriteOptions, true);
 
-        // Commit new schema.
-        if (mergedSchema.isPresent() && masterTable.schemaManager().commit(mergedSchema.get())) {
+        if (mergedSchema.isPresent()) {
             updatedSchema = mergedSchema.get();
             Preconditions.checkState(
                     updatedSchema.id() - 1 == oldSchema.id(), "schema id has been changed.");
@@ -112,17 +121,17 @@ public class VersionControlOperator {
 
     @VisibleForTesting
     public void fallBackCherryPick(TableSchema updatedSchema, Snapshot beforeSnapshot) {
-        Snapshot latestSnp = masterTable.store().snapshotManager().latestSnapshot();
+        Snapshot latestSnp = targetTable.store().snapshotManager().latestSnapshot();
         if (updatedSchema != null && latestSnp != null) {
             // newSchema has not been use, we need to delete the updatedSchema.
             if (beforeSnapshot != null && beforeSnapshot.schemaId() == latestSnp.schemaId()) {
-                if (masterTable.schemaManager().schemaExists(updatedSchema.id())
+                if (targetTable.schemaManager().schemaExists(updatedSchema.id())
                         && updatedSchema.equals(
-                        masterTable.schemaManager().schema(updatedSchema.id()))) {
-                    masterTable
+                                targetTable.schemaManager().schema(updatedSchema.id()))) {
+                    targetTable
                             .fileIO()
                             .deleteQuietly(
-                                    masterTable.schemaManager().toSchemaPath(updatedSchema.id()));
+                                    targetTable.schemaManager().toSchemaPath(updatedSchema.id()));
                 }
             }
         }
@@ -224,14 +233,6 @@ public class VersionControlOperator {
         return manifestCommittable;
     }
 
-    private FileStoreTable getBranchFileStoreTable(String branchName) {
-        Preconditions.checkArgument(
-                masterTable.branchManager().branchExists(branchName),
-                "Branch %s is not exist.",
-                branchName);
-        return masterTable.switchToBranch(branchName);
-    }
-
     private Snapshot getCherryPickSnapshot(FileStoreTable fromTable, long snapshotId) {
         Preconditions.checkArgument(
                 fromTable.snapshotManager().snapshotExists(snapshotId),
@@ -241,17 +242,17 @@ public class VersionControlOperator {
         Snapshot cherryPickSnapshot = fromTable.snapshot(snapshotId);
         Preconditions.checkArgument(
                 cherryPickSnapshot.commitKind() == Snapshot.CommitKind.APPEND,
-                "Cherry-pick is only supported in APPEND commitKind snapshot.");
+                "Cherry-pick can only pick snapshots of APPEND CommitKind.");
         return cherryPickSnapshot;
     }
 
-    /** 检验 target table 的可应用型. */
-    private void checkApplicability() {
+    /** Check whether the current table supports cherry-pick. */
+    private void validateForCherryPick() {
         Preconditions.checkArgument(
-                masterTable.primaryKeys().isEmpty()
-                        || masterTable.bucketMode() == BucketMode.HASH_FIXED,
+                targetTable.primaryKeys().isEmpty()
+                        || targetTable.bucketMode() == BucketMode.HASH_FIXED,
                 "Cherry-pick is only supported in append-only or hash-fixed primary key table.");
         Preconditions.checkArgument(
-                !masterTable.coreOptions().needLookup(), "Cherry-pick do not support lookup mode.");
+                !targetTable.coreOptions().needLookup(), "Cherry-pick do not support lookup mode.");
     }
 }

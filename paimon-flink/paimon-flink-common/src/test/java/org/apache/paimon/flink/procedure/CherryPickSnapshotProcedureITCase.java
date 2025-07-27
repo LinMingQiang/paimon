@@ -418,7 +418,7 @@ public class CherryPickSnapshotProcedureITCase extends CatalogITCaseBase {
                         .satisfies(
                                 anyCauseMatches(
                                         IllegalArgumentException.class,
-                                        "Cherry-pick is only supported in APPEND commitKind snapshot."));
+                                        "Cherry-pick can only pick snapshots of APPEND CommitKind."));
             } else {
                 assertThatThrownBy(() -> cherryPick("default.T", "test", "main", 2, false))
                         .satisfies(

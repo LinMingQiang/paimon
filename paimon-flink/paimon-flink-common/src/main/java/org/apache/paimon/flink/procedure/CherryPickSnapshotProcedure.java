@@ -22,11 +22,14 @@ import org.apache.paimon.Snapshot;
 import org.apache.paimon.catalog.Catalog;
 import org.apache.paimon.catalog.Identifier;
 import org.apache.paimon.table.FileStoreTable;
+import org.apache.paimon.utils.Preconditions;
 
 import org.apache.flink.table.annotation.ArgumentHint;
 import org.apache.flink.table.annotation.DataTypeHint;
 import org.apache.flink.table.annotation.ProcedureHint;
 import org.apache.flink.table.procedure.ProcedureContext;
+
+import static org.apache.paimon.CoreOptions.BRANCH;
 
 /** Cherry-pick snapshot from branch to current branch. */
 public class CherryPickSnapshotProcedure extends ProcedureBase {
@@ -58,20 +61,31 @@ public class CherryPickSnapshotProcedure extends ProcedureBase {
             Boolean overwriteOptions)
             throws Catalog.TableNotExistException {
         Identifier identifier = Identifier.fromString(tableId);
-        FileStoreTable toBranchTable = (FileStoreTable) catalog.getTable(identifier);
-        if (!toBranchName.equalsIgnoreCase("main") && !toBranchName.equalsIgnoreCase("master")) {
-            toBranchTable = toBranchTable.switchToBranch(toBranchName);
+        FileStoreTable targetBranchTable = (FileStoreTable) catalog.getTable(identifier);
+
+        Preconditions.checkArgument(
+                targetBranchTable.branchManager().branchExists(fromBranchName),
+                "Cherry-pick from branch [%s] is not exist.",
+                fromBranchName);
+
+        if (!toBranchName.equalsIgnoreCase(BRANCH.defaultValue())) {
+            targetBranchTable = targetBranchTable.switchToBranch(toBranchName);
         }
+
         Snapshot generatedSnapshot =
-                toBranchTable
+                targetBranchTable
                         .versionControlOperator()
                         .overwriteOptions(overwriteOptions == null || overwriteOptions)
                         .cherryPick(fromBranchName, snapshot);
+
         return new String[] {
             generatedSnapshot == null
-                    ? "Cherry-pick failed."
-                    : "Cherry-pick succeeds and generates a new snapshot in the target branch : "
-                            + generatedSnapshot.id()
+                    ? String.format(
+                            "Cherry-pick from branch [%s] snapshot [%s] to branch [%s] is failed.",
+                            fromBranchName, snapshot, toBranchName)
+                    : String.format(
+                            "Cherry-pick succeeds and generates a new snapshot [%s] in the target branch [%s].",
+                            generatedSnapshot.id(), toBranchName)
         };
     }
 }
