@@ -69,6 +69,7 @@ public class VersionControlOperator {
         TableSchema currentSchema = targetTable.schemaManager().latest().orElse(null);
 
         TableSchema appeliedSchema = null;
+        boolean hasCommitNewSchema = false;
         Snapshot appeliedSnapshot;
         try {
 
@@ -79,7 +80,10 @@ public class VersionControlOperator {
             appeliedSchema = mergeSchema(currentSchema, fromTable.schema());
 
             if (appeliedSchema != null) {
-                targetTable.schemaManager().commit(appeliedSchema);
+                if (currentSchema == null || !currentSchema.equals(appeliedSchema)) {
+                    targetTable.schemaManager().commit(appeliedSchema);
+                    hasCommitNewSchema = true;
+                }
             }
 
             FileStoreCommitImpl fileStoreCommit =
@@ -91,9 +95,8 @@ public class VersionControlOperator {
             appeliedSnapshot = targetTable.store().snapshotManager().latestSnapshot();
 
         } catch (Throwable e) {
-            if (appeliedSchema != null
-                    && targetTable.schemaManager().schemaExists(appeliedSchema.id())) {
-                fallBackCherryPick(appeliedSchema, currentSnapshot);
+            if (hasCommitNewSchema) {
+                fallBackCherryPick(appeliedSchema, currentSnapshot, currentSchema);
             }
             throw new RuntimeException("Cherry-pick is failed.", e);
         }
@@ -123,39 +126,22 @@ public class VersionControlOperator {
         return updatedSchema;
     }
 
-    public void fallBackCherryPick(TableSchema updatedSchema, Snapshot currentSnapshot) {
+    @VisibleForTesting
+    public void fallBackCherryPick(
+            TableSchema updatedSchema, Snapshot currentSnapshot, TableSchema beforeSchema) {
         Snapshot latestSnp = targetTable.store().snapshotManager().latestSnapshot();
-        boolean needDeleteSchema = false;
-        boolean isConflict = false;
         if (latestSnp == null) {
             // new Schema has not been used.
-            needDeleteSchema = true;
+            targetTable
+                    .fileIO()
+                    .deleteQuietly(targetTable.schemaManager().toSchemaPath(updatedSchema.id()));
         } else {
-            if (currentSnapshot == null) {
-                // new schema has been committed and be used.
-                isConflict = true;
-            } else {
-                TableSchema beforeSchema =
-                        targetTable.schemaManager().schema(currentSnapshot.schemaId());
-                // new schema has been committed.
-                if (!updatedSchema.equals(beforeSchema) && updatedSchema.id() > beforeSchema.id()) {
-                    if (latestSnp.schemaId() >= updatedSchema.id()) {
-                        // new schema has been committed and be used.
-                        isConflict = true;
-                    }
-                    needDeleteSchema = true;
-                }
+            if (latestSnp.schemaId() >= updatedSchema.id()) {
+                throw new RuntimeException(
+                        String.format(
+                                "New schema [%s] has been used for snapshot [%s], we can not delete the schema, please rollback to the last snapshot [%s]",
+                                updatedSchema.id(), latestSnp.id(), currentSnapshot.id()));
             }
-        }
-
-        if (isConflict) {
-            throw new RuntimeException(
-                    String.format(
-                            "New schema [%s] has been used for snapshot [%s], we can not delete the schema, please rollback to the last snapshot [%s]",
-                            updatedSchema.id(), latestSnp.id(), currentSnapshot.id()));
-        }
-        if (needDeleteSchema) {
-            deletePath(targetTable, targetTable.schemaManager().toSchemaPath(updatedSchema.id()));
         }
     }
 
