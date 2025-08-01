@@ -21,6 +21,7 @@ package org.apache.paimon.utils;
 import org.apache.paimon.Snapshot;
 import org.apache.paimon.annotation.VisibleForTesting;
 import org.apache.paimon.data.BinaryRow;
+import org.apache.paimon.fs.Path;
 import org.apache.paimon.io.CompactIncrement;
 import org.apache.paimon.io.DataIncrement;
 import org.apache.paimon.io.IndexIncrement;
@@ -90,7 +91,10 @@ public class VersionControlOperator {
             appeliedSnapshot = targetTable.store().snapshotManager().latestSnapshot();
 
         } catch (Throwable e) {
-            fallBackCherryPick(appeliedSchema, currentSnapshot);
+            if (appeliedSchema != null
+                    && targetTable.schemaManager().schemaExists(appeliedSchema.id())) {
+                fallBackCherryPick(appeliedSchema, currentSnapshot);
+            }
             throw new RuntimeException("Cherry-pick is failed.", e);
         }
 
@@ -119,22 +123,44 @@ public class VersionControlOperator {
         return updatedSchema;
     }
 
-    @VisibleForTesting
-    public void fallBackCherryPick(TableSchema updatedSchema, Snapshot beforeSnapshot) {
+    public void fallBackCherryPick(TableSchema updatedSchema, Snapshot currentSnapshot) {
         Snapshot latestSnp = targetTable.store().snapshotManager().latestSnapshot();
-        if (updatedSchema != null && latestSnp != null) {
-            // newSchema has not been use, we need to delete the updatedSchema.
-            if (beforeSnapshot != null && beforeSnapshot.schemaId() == latestSnp.schemaId()) {
-                if (targetTable.schemaManager().schemaExists(updatedSchema.id())
-                        && updatedSchema.equals(
-                                targetTable.schemaManager().schema(updatedSchema.id()))) {
-                    targetTable
-                            .fileIO()
-                            .deleteQuietly(
-                                    targetTable.schemaManager().toSchemaPath(updatedSchema.id()));
+        boolean needDeleteSchema = false;
+        boolean isConflict = false;
+        if (latestSnp == null) {
+            // new Schema has not been used.
+            needDeleteSchema = true;
+        } else {
+            if (currentSnapshot == null) {
+                // new schema has been committed and be used.
+                isConflict = true;
+            } else {
+                TableSchema beforeSchema =
+                        targetTable.schemaManager().schema(currentSnapshot.schemaId());
+                // new schema has been committed.
+                if (!updatedSchema.equals(beforeSchema) && updatedSchema.id() > beforeSchema.id()) {
+                    if (latestSnp.schemaId() >= updatedSchema.id()) {
+                        // new schema has been committed and be used.
+                        isConflict = true;
+                    }
+                    needDeleteSchema = true;
                 }
             }
         }
+
+        if (isConflict) {
+            throw new RuntimeException(
+                    String.format(
+                            "New schema [%s] has been used for snapshot [%s], we can not delete the schema, please rollback to the last snapshot [%s]",
+                            updatedSchema.id(), latestSnp.id(), currentSnapshot.id()));
+        }
+        if (needDeleteSchema) {
+            deletePath(targetTable, targetTable.schemaManager().toSchemaPath(updatedSchema.id()));
+        }
+    }
+
+    private void deletePath(FileStoreTable masterTable, Path file) {
+        masterTable.fileIO().deleteQuietly(file);
     }
 
     public VersionControlOperator overwriteOptions(boolean overwriteOptions) {
