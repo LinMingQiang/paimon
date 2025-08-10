@@ -21,7 +21,6 @@ package org.apache.paimon.utils;
 import org.apache.paimon.Snapshot;
 import org.apache.paimon.annotation.VisibleForTesting;
 import org.apache.paimon.data.BinaryRow;
-import org.apache.paimon.fs.Path;
 import org.apache.paimon.io.CompactIncrement;
 import org.apache.paimon.io.DataIncrement;
 import org.apache.paimon.io.IndexIncrement;
@@ -47,13 +46,16 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /** Version control operator. */
-public class VersionControlOperator {
+public class VersionControlManager {
+
     protected final FileStoreTable targetTable;
     protected final CatalogEnvironment catalogEnvironment;
 
     protected boolean overwriteOptions;
 
-    public VersionControlOperator(
+    protected boolean mergeSchema;
+
+    public VersionControlManager(
             FileStoreTable targetTable, CatalogEnvironment catalogEnvironment) {
         this.catalogEnvironment = catalogEnvironment;
         this.targetTable = targetTable;
@@ -74,6 +76,7 @@ public class VersionControlOperator {
         try {
 
             // TODO : 需要增加一个检测，当前 cherry pick 的 file 是否已经存在在 main 了, 也就是一个 数据被 cp 了多次.
+            // TODO : 需要测试 AddPartitionCommitCallback，这个在 FileStoreCommitImpl.commit 的时候会 call back.
             Snapshot cherryPickSnapshot = getCherryPickSnapshot(fromTable, snapshotId);
             String commitUser = cherryPickSnapshot.commitUser();
 
@@ -145,12 +148,13 @@ public class VersionControlOperator {
         }
     }
 
-    private void deletePath(FileStoreTable masterTable, Path file) {
-        masterTable.fileIO().deleteQuietly(file);
+    public VersionControlManager overwriteOptions(boolean overwriteOptions) {
+        this.overwriteOptions = overwriteOptions;
+        return this;
     }
 
-    public VersionControlOperator overwriteOptions(boolean overwriteOptions) {
-        this.overwriteOptions = overwriteOptions;
+    public VersionControlManager mergeSchema(boolean mergeSchema) {
+        this.mergeSchema = mergeSchema;
         return this;
     }
 

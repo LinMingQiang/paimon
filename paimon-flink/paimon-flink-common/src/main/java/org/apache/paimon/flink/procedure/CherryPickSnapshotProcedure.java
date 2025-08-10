@@ -47,6 +47,7 @@ public class CherryPickSnapshotProcedure extends ProcedureBase {
                 @ArgumentHint(name = "from_branch", type = @DataTypeHint("STRING")),
                 @ArgumentHint(name = "to_branch", type = @DataTypeHint("STRING")),
                 @ArgumentHint(name = "snapshot", type = @DataTypeHint("Integer")),
+                @ArgumentHint(name = "merge_schema", type = @DataTypeHint("BOOLEAN"), isOptional = true),
                 @ArgumentHint(
                         name = "overwriteOptions",
                         type = @DataTypeHint("BOOLEAN"),
@@ -58,24 +59,25 @@ public class CherryPickSnapshotProcedure extends ProcedureBase {
             String fromBranchName,
             String toBranchName,
             Integer snapshot,
+            Boolean mergeSchema,
             Boolean overwriteOptions)
             throws Catalog.TableNotExistException {
         Identifier identifier = Identifier.fromString(tableId);
-        FileStoreTable targetBranchTable = (FileStoreTable) catalog.getTable(identifier);
+        FileStoreTable mainTable = (FileStoreTable) catalog.getTable(identifier);
 
         Preconditions.checkArgument(
-                targetBranchTable.branchManager().branchExists(fromBranchName),
+                mainTable.branchManager().branchExists(fromBranchName),
                 "Cherry-pick from branch [%s] is not exist.",
                 fromBranchName);
 
-        if (!toBranchName.equalsIgnoreCase(BRANCH.defaultValue())) {
-            targetBranchTable = targetBranchTable.switchToBranch(toBranchName);
-        }
+        FileStoreTable toBranchTable = toBranchName.equalsIgnoreCase(BRANCH.defaultValue()) ? mainTable
+                : mainTable.switchToBranch(toBranchName);
 
         Snapshot generatedSnapshot =
-                targetBranchTable
-                        .versionControlOperator()
+                toBranchTable
+                        .versionControlManager()
                         .overwriteOptions(overwriteOptions == null || overwriteOptions)
+                        .mergeSchema(mergeSchema == null || mergeSchema)
                         .cherryPick(fromBranchName, snapshot);
 
         return new String[] {

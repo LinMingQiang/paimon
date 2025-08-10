@@ -74,7 +74,7 @@ public class CherryPickSnapshotProcedure extends BaseProcedure {
         FileStoreTable mainTable = (FileStoreTable) loadSparkTable(tableIdent).getTable();
         Snapshot updatedSnapshot =
                 mainTable
-                        .versionControlOperator()
+                        .versionControlManager()
                         .overwriteOptions(overwriteOptions == null || overwriteOptions)
                         .cherryPick(branchName, snapshot);
         return new InternalRow[] {

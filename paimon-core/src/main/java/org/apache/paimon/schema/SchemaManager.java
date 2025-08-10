@@ -716,7 +716,7 @@ public class SchemaManager implements Serializable {
     public Optional<TableSchema> mergeSchema(
             TableSchema current,
             TableSchema update,
-            boolean mergeOptions,
+            boolean overwriteOptions,
             boolean allowExplicitCast) {
 
         Preconditions.checkArgument(
@@ -726,7 +726,7 @@ public class SchemaManager implements Serializable {
         TableSchema newSchema =
                 SchemaMergingUtils.mergeSchemas(
                         current, new RowType(false, update.fields()), allowExplicitCast);
-        if (mergeOptions) {
+        if (overwriteOptions) {
             newSchema =
                     newSchema.copy(
                             SchemaMergingUtils.mergeOptions(current.options(), update.options()));

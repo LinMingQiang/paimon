@@ -28,7 +28,7 @@ import org.apache.paimon.utils.BranchManager;
 import org.apache.paimon.utils.ChangelogManager;
 import org.apache.paimon.utils.SnapshotManager;
 import org.apache.paimon.utils.TagManager;
-import org.apache.paimon.utils.VersionControlOperator;
+import org.apache.paimon.utils.VersionControlManager;
 
 /** A {@link Table} for data. */
 public interface DataTable extends InnerTable {
@@ -52,7 +52,7 @@ public interface DataTable extends InnerTable {
 
     BranchManager branchManager();
 
-    VersionControlOperator versionControlOperator();
+    VersionControlManager versionControlManager();
 
     /**
      * Get {@link DataTable} with branch identified by {@code branchName}. Note that this method
