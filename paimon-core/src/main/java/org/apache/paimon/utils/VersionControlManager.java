@@ -76,7 +76,8 @@ public class VersionControlManager {
         try {
 
             // TODO : 需要增加一个检测，当前 cherry pick 的 file 是否已经存在在 main 了, 也就是一个 数据被 cp 了多次.
-            // TODO : 需要测试 AddPartitionCommitCallback，这个在 FileStoreCommitImpl.commit 的时候会 call back.
+            // TODO : 需要测试 AddPartitionCommitCallback，这个在 FileStoreCommitImpl.commit 的时候会 call back. (应该禁止 分区提交，因为 branch 会提交到 主分支上，但是既然 pick 了，是不是就应该提交呢。).
+            // TODO ：如果是提交到 master ，那就应该 同步 partition.
             Snapshot cherryPickSnapshot = getCherryPickSnapshot(fromTable, snapshotId);
             String commitUser = cherryPickSnapshot.commitUser();
 
