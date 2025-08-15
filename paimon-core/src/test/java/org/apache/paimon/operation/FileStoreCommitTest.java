@@ -1040,6 +1040,36 @@ public class FileStoreCommitTest {
     }
 
     @Test
+    public void testCommitManifestWithCommitMessage() throws Exception {
+        String commitMessage = "this is a commit message set by options.";
+        TestFileStore store =
+                createStore(
+                        false,
+                        Collections.singletonMap(
+                                CoreOptions.COMMIT_SNAPSHOT_MESSAGE.key(), commitMessage));
+
+        try (FileStoreCommit fileStoreCommit = store.newCommit()) {
+            fileStoreCommit.ignoreEmptyCommit(false);
+
+            ManifestCommittable manifestCommittable = new ManifestCommittable(0);
+            fileStoreCommit.commit(manifestCommittable, false);
+            Snapshot snapshot = checkNotNull(store.snapshotManager().latestSnapshot());
+            assertThat(snapshot.commitMessage()).isEqualTo(commitMessage);
+        }
+
+        store.options().toConfiguration().remove(CoreOptions.COMMIT_SNAPSHOT_MESSAGE.key());
+        commitMessage = "this is a commit message set by api.";
+        try (FileStoreCommit fileStoreCommit = store.newCommit()) {
+            fileStoreCommit.ignoreEmptyCommit(false);
+            fileStoreCommit.withCommitMessage(commitMessage);
+            ManifestCommittable manifestCommittable = new ManifestCommittable(0);
+            fileStoreCommit.commit(manifestCommittable, false);
+            Snapshot snapshot = checkNotNull(store.snapshotManager().latestSnapshot());
+            assertThat(snapshot.commitMessage()).isEqualTo(commitMessage);
+        }
+    }
+
+    @Test
     public void testCommitTwiceWithDifferentKind() throws Exception {
         TestFileStore store = createStore(false);
         try (FileStoreCommitImpl commit = store.newCommit()) {
@@ -1054,6 +1084,7 @@ public class FileStoreCommitTest {
                     null,
                     Collections.emptyMap(),
                     Collections.emptyMap(),
+                    null,
                     Snapshot.CommitKind.APPEND,
                     firstLatest,
                     mustConflictCheck(),
@@ -1068,6 +1099,7 @@ public class FileStoreCommitTest {
                     null,
                     Collections.emptyMap(),
                     Collections.emptyMap(),
+                    null,
                     Snapshot.CommitKind.COMPACT,
                     store.snapshotManager().latestSnapshot(),
                     mustConflictCheck(),

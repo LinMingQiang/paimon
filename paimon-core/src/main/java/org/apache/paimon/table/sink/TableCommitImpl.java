@@ -163,6 +163,12 @@ public class TableCommitImpl implements InnerTableCommit {
     }
 
     @Override
+    public InnerTableCommit withCommitMessage(String commitMessage) {
+        commit.withCommitMessage(commitMessage);
+        return this;
+    }
+
+    @Override
     public void commit(List<CommitMessage> commitMessages) {
         checkCommitted();
         commit(COMMIT_IDENTIFIER, commitMessages);

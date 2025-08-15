@@ -930,6 +930,7 @@ public class FileDeletionTest {
                     null,
                     Collections.emptyMap(),
                     Collections.emptyMap(),
+                    null,
                     Snapshot.CommitKind.APPEND,
                     store.snapshotManager().latestSnapshot(),
                     mustConflictCheck(),

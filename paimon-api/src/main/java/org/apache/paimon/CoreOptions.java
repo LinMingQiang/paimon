@@ -1732,6 +1732,12 @@ public class CoreOptions implements Serializable {
                     .noDefaultValue()
                     .withDescription("Specifies the commit user prefix.");
 
+    public static final ConfigOption<String> COMMIT_SNAPSHOT_MESSAGE =
+            key("commit.snapshot.message")
+                    .stringType()
+                    .noDefaultValue()
+                    .withDescription("Specifies the commit snapshot message.");
+
     @Immutable
     public static final ConfigOption<Boolean> FORCE_LOOKUP =
             key("force-lookup")
@@ -2122,6 +2128,10 @@ public class CoreOptions implements Serializable {
 
     public String createCommitUser() {
         return createCommitUser(options);
+    }
+
+    public String commitMessage() {
+        return options.get(COMMIT_SNAPSHOT_MESSAGE);
     }
 
     public boolean definedAggFunc() {

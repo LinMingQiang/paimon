@@ -398,6 +398,30 @@ public class BatchFileStoreITCase extends CatalogITCaseBase {
     }
 
     @Test
+    public void testWriteWithCommitMessage() throws Exception {
+
+        String commitMessage = "commit message : This is a daily incremental data loading task.";
+        batchSql(
+                "INSERT INTO T /*+ OPTIONS('commit.snapshot.message'='%s') */ VALUES (1, 11, 111), (2, 22, 222)",
+                commitMessage);
+
+        FileStoreTable table = paimonTable("T");
+        assertThat(table.snapshotManager().snapshotCount()).isEqualTo(1);
+        Snapshot snapshot = table.snapshotManager().latestSnapshot();
+        assertThat(snapshot.commitMessage()).isEqualTo(commitMessage);
+
+        commitMessage = "commit message : This is the reason why we need to overwrite data.";
+        batchSql(
+                "INSERT OVERWRITE T /*+ OPTIONS('commit.snapshot.message'='%s') */ SELECT * FROM T where a = 1",
+                commitMessage);
+        table = paimonTable("T");
+        assertThat(table.snapshotManager().snapshotCount()).isEqualTo(2);
+
+        Snapshot overwriteSnapshot = table.snapshotManager().latestSnapshot();
+        assertThat(overwriteSnapshot.commitMessage()).isEqualTo(commitMessage);
+    }
+
+    @Test
     public void testIncrementBetweenReadWithSnapshotExpiration() throws Exception {
         String tableName = "T";
         batchSql(String.format("INSERT INTO %s VALUES (1, 11, 111)", tableName));

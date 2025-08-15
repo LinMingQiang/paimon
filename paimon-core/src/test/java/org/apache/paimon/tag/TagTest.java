@@ -52,6 +52,7 @@ public class TagTest {
                     null,
                     null,
                     null,
+                    null,
                     null);
 
     @Test

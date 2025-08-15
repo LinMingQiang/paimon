@@ -155,6 +155,7 @@ public class FileStoreCommitImpl implements FileStoreCommit {
     private boolean ignoreEmptyCommit;
     private CommitMetrics commitMetrics;
     @Nullable private PartitionExpire partitionExpire;
+    private String commitMessage;
 
     public FileStoreCommitImpl(
             SnapshotCommit snapshotCommit,
@@ -231,6 +232,7 @@ public class FileStoreCommitImpl implements FileStoreCommit {
         this.statsFileHandler = statsFileHandler;
         this.bucketMode = bucketMode;
         this.rowTrackingEnabled = rowTrackingEnabled;
+        this.commitMessage = options.commitMessage();
     }
 
     @Override
@@ -242,6 +244,12 @@ public class FileStoreCommitImpl implements FileStoreCommit {
     @Override
     public FileStoreCommit withPartitionExpire(PartitionExpire partitionExpire) {
         this.partitionExpire = partitionExpire;
+        return this;
+    }
+
+    @Override
+    public FileStoreCommit withCommitMessage(String commitMessage) {
+        this.commitMessage = commitMessage;
         return this;
     }
 
@@ -344,6 +352,7 @@ public class FileStoreCommitImpl implements FileStoreCommit {
                                 committable.watermark(),
                                 committable.logOffsets(),
                                 committable.properties(),
+                                commitMessage,
                                 Snapshot.CommitKind.APPEND,
                                 noConflictCheck(),
                                 null);
@@ -380,6 +389,7 @@ public class FileStoreCommitImpl implements FileStoreCommit {
                                 committable.watermark(),
                                 committable.logOffsets(),
                                 committable.properties(),
+                                commitMessage,
                                 Snapshot.CommitKind.COMPACT,
                                 hasConflictChecked(safeLatestSnapshotId),
                                 null);
@@ -519,7 +529,8 @@ public class FileStoreCommitImpl implements FileStoreCommit {
                                 committable.identifier(),
                                 committable.watermark(),
                                 committable.logOffsets(),
-                                committable.properties());
+                                committable.properties(),
+                                commitMessage);
                 generatedSnapshot += 1;
             }
 
@@ -533,6 +544,7 @@ public class FileStoreCommitImpl implements FileStoreCommit {
                                 committable.watermark(),
                                 committable.logOffsets(),
                                 committable.properties(),
+                                commitMessage,
                                 Snapshot.CommitKind.COMPACT,
                                 mustConflictCheck(),
                                 null);
@@ -593,7 +605,8 @@ public class FileStoreCommitImpl implements FileStoreCommit {
                 commitIdentifier,
                 null,
                 new HashMap<>(),
-                new HashMap<>());
+                new HashMap<>(),
+                commitMessage);
     }
 
     @Override
@@ -605,7 +618,8 @@ public class FileStoreCommitImpl implements FileStoreCommit {
                 commitIdentifier,
                 null,
                 new HashMap<>(),
-                new HashMap<>());
+                new HashMap<>(),
+                null);
     }
 
     @Override
@@ -643,6 +657,7 @@ public class FileStoreCommitImpl implements FileStoreCommit {
                 null,
                 Collections.emptyMap(),
                 Collections.emptyMap(),
+                commitMessage,
                 Snapshot.CommitKind.ANALYZE,
                 noConflictCheck(),
                 statsFileName);
@@ -786,6 +801,7 @@ public class FileStoreCommitImpl implements FileStoreCommit {
             @Nullable Long watermark,
             Map<Integer, Long> logOffsets,
             Map<String, String> properties,
+            String commitMessage,
             Snapshot.CommitKind commitKind,
             ConflictCheck conflictCheck,
             @Nullable String statsFileName) {
@@ -804,6 +820,7 @@ public class FileStoreCommitImpl implements FileStoreCommit {
                             watermark,
                             logOffsets,
                             properties,
+                            commitMessage,
                             commitKind,
                             latestSnapshot,
                             conflictCheck,
@@ -837,7 +854,8 @@ public class FileStoreCommitImpl implements FileStoreCommit {
             long identifier,
             @Nullable Long watermark,
             Map<Integer, Long> logOffsets,
-            Map<String, String> properties) {
+            Map<String, String> properties,
+            String commitMessage) {
         // collect all files with overwrite
         Snapshot latestSnapshot = snapshotManager.latestSnapshot();
         List<ManifestEntry> changesWithOverwrite = new ArrayList<>();
@@ -883,6 +901,7 @@ public class FileStoreCommitImpl implements FileStoreCommit {
                 watermark,
                 logOffsets,
                 properties,
+                commitMessage,
                 Snapshot.CommitKind.OVERWRITE,
                 mustConflictCheck(),
                 null);
@@ -898,6 +917,7 @@ public class FileStoreCommitImpl implements FileStoreCommit {
             @Nullable Long watermark,
             Map<Integer, Long> logOffsets,
             Map<String, String> properties,
+            String commitMessage,
             Snapshot.CommitKind commitKind,
             @Nullable Snapshot latestSnapshot,
             ConflictCheck conflictCheck,
@@ -1112,7 +1132,8 @@ public class FileStoreCommitImpl implements FileStoreCommit {
                             statsFileName,
                             // if empty properties, just set to null
                             properties.isEmpty() ? null : properties,
-                            nextRowIdStart);
+                            nextRowIdStart,
+                            commitMessage);
         } catch (Throwable e) {
             // fails when preparing for commit, we should clean up
             cleanUpReuseTmpManifests(
@@ -1278,7 +1299,8 @@ public class FileStoreCommitImpl implements FileStoreCommit {
                         latestSnapshot.watermark(),
                         latestSnapshot.statistics(),
                         latestSnapshot.properties(),
-                        latestSnapshot.nextRowId());
+                        latestSnapshot.nextRowId(),
+                        latestSnapshot.commitMessage());
 
         return commitSnapshotImpl(newSnapshot, emptyList());
     }

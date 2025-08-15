@@ -64,7 +64,8 @@ public class Changelog extends Snapshot {
                 snapshot.watermark(),
                 snapshot.statistics(),
                 snapshot.properties,
-                snapshot.nextRowId);
+                snapshot.nextRowId,
+                snapshot.commitMessage);
     }
 
     @JsonCreator
@@ -91,7 +92,8 @@ public class Changelog extends Snapshot {
             @JsonProperty(FIELD_WATERMARK) @Nullable Long watermark,
             @JsonProperty(FIELD_STATISTICS) @Nullable String statistics,
             @JsonProperty(FIELD_PROPERTIES) Map<String, String> properties,
-            @JsonProperty(FIELD_NEXT_ROW_ID) @Nullable Long nextRowId) {
+            @JsonProperty(FIELD_NEXT_ROW_ID) @Nullable Long nextRowId,
+            @JsonProperty(FIELD_COMMIT_MESSAGE) @Nullable String commitMessage) {
         super(
                 version,
                 id,
@@ -114,7 +116,8 @@ public class Changelog extends Snapshot {
                 watermark,
                 statistics,
                 properties,
-                nextRowId);
+                nextRowId,
+                commitMessage);
     }
 
     public static Changelog fromJson(String json) {

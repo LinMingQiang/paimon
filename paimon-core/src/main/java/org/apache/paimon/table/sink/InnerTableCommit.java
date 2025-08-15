@@ -48,4 +48,6 @@ public interface InnerTableCommit extends StreamTableCommit, BatchTableCommit {
 
     @Override
     InnerTableCommit withMetricRegistry(MetricRegistry registry);
+
+    InnerTableCommit withCommitMessage(String commitMessage);
 }

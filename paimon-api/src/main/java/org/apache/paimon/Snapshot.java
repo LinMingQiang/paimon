@@ -89,6 +89,7 @@ public class Snapshot implements Serializable {
     protected static final String FIELD_STATISTICS = "statistics";
     protected static final String FIELD_PROPERTIES = "properties";
     protected static final String FIELD_NEXT_ROW_ID = "nextRowId";
+    protected static final String FIELD_COMMIT_MESSAGE = "commitMessage";
 
     // version of snapshot
     // null for paimon <= 0.2
@@ -209,6 +210,11 @@ public class Snapshot implements Serializable {
     @JsonProperty(FIELD_NEXT_ROW_ID)
     protected final Long nextRowId;
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonProperty(FIELD_COMMIT_MESSAGE)
+    @Nullable
+    protected final String commitMessage;
+
     public Snapshot(
             long id,
             long schemaId,
@@ -230,7 +236,8 @@ public class Snapshot implements Serializable {
             @Nullable Long watermark,
             @Nullable String statistics,
             @Nullable Map<String, String> properties,
-            @Nullable Long nextRowId) {
+            @Nullable Long nextRowId,
+            @Nullable String commitMessage) {
         this(
                 CURRENT_VERSION,
                 id,
@@ -253,7 +260,8 @@ public class Snapshot implements Serializable {
                 watermark,
                 statistics,
                 properties,
-                nextRowId);
+                nextRowId,
+                commitMessage);
     }
 
     @JsonCreator
@@ -280,7 +288,8 @@ public class Snapshot implements Serializable {
             @JsonProperty(FIELD_WATERMARK) @Nullable Long watermark,
             @JsonProperty(FIELD_STATISTICS) @Nullable String statistics,
             @JsonProperty(FIELD_PROPERTIES) @Nullable Map<String, String> properties,
-            @JsonProperty(FIELD_NEXT_ROW_ID) @Nullable Long nextRowId) {
+            @JsonProperty(FIELD_NEXT_ROW_ID) @Nullable Long nextRowId,
+            @JsonProperty(FIELD_COMMIT_MESSAGE) @Nullable String commitMessage) {
         this.version = version;
         this.id = id;
         this.schemaId = schemaId;
@@ -303,6 +312,7 @@ public class Snapshot implements Serializable {
         this.statistics = statistics;
         this.properties = properties;
         this.nextRowId = nextRowId;
+        this.commitMessage = commitMessage;
     }
 
     @JsonGetter(FIELD_VERSION)
@@ -423,6 +433,12 @@ public class Snapshot implements Serializable {
         return properties;
     }
 
+    @JsonGetter(FIELD_COMMIT_MESSAGE)
+    @Nullable
+    public String commitMessage() {
+        return commitMessage;
+    }
+
     @JsonGetter(FIELD_NEXT_ROW_ID)
     @Nullable
     public Long nextRowId() {
@@ -457,7 +473,8 @@ public class Snapshot implements Serializable {
                 watermark,
                 statistics,
                 properties,
-                nextRowId);
+                nextRowId,
+                commitMessage);
     }
 
     @Override
