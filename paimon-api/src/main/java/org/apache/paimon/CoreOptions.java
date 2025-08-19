@@ -1732,6 +1732,12 @@ public class CoreOptions implements Serializable {
                     .noDefaultValue()
                     .withDescription("Specifies the commit user prefix.");
 
+    public static final ConfigOption<String> COMMIT_SNAPSHOT_PROPERTIES =
+            key("commit.properties.key.#")
+                    .stringType()
+                    .noDefaultValue()
+                    .withDescription("Specifies the commit snapshot properties.");
+
     @Immutable
     public static final ConfigOption<Boolean> FORCE_LOOKUP =
             key("force-lookup")
@@ -2976,6 +2982,17 @@ public class CoreOptions implements Serializable {
         } else {
             return OrderType.of(clusteringStrategy);
         }
+    }
+
+    public Map<String, String> commitProperties() {
+        String keyPrefix = COMMIT_SNAPSHOT_PROPERTIES.key().replace("#", "");
+        Map<String, String> properties = new HashMap<>();
+        options.toMap().forEach((k, v) -> {
+            if (k.startsWith(keyPrefix)) {
+                properties.put(k.substring(keyPrefix.length()), v);
+            }
+        });
+        return properties;
     }
 
     /** Specifies the merge engine for table with primary key. */
